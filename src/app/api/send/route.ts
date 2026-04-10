@@ -3,7 +3,7 @@ import { getSubscribers, addSendLog } from "@/lib/db";
 import { sendBulkEmails } from "@/lib/resend";
 
 export async function POST(request: NextRequest) {
-  const { subject, htmlContent, prompt } = await request.json();
+  const { subject, htmlContent, prompt, groupId } = await request.json();
 
   if (!subject || !htmlContent) {
     return Response.json(
@@ -12,7 +12,10 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const subscribers = getSubscribers();
+  const subscribers = groupId
+    ? getSubscribers(undefined, groupId)
+    : getSubscribers();
+
   if (subscribers.length === 0) {
     return Response.json({ error: "No active subscribers" }, { status: 400 });
   }

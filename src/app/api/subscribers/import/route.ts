@@ -4,6 +4,8 @@ import { importSubscribers } from "@/lib/db";
 export async function POST(request: NextRequest) {
   const formData = await request.formData();
   const file = formData.get("file") as File | null;
+  const groupIdStr = formData.get("groupId") as string | null;
+  const groupId = groupIdStr ? Number(groupIdStr) : undefined;
 
   if (!file) {
     return Response.json({ error: "CSV file is required" }, { status: 400 });
@@ -15,7 +17,6 @@ export async function POST(request: NextRequest) {
   const rows: { email: string; name?: string }[] = [];
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim();
-    // Skip header row
     if (i === 0 && (line.toLowerCase().includes("email") || line.toLowerCase().includes("name"))) {
       continue;
     }
@@ -26,6 +27,6 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  const result = importSubscribers(rows);
+  const result = importSubscribers(rows, groupId);
   return Response.json(result);
 }

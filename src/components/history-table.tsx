@@ -2,8 +2,10 @@
 
 import { useState, useEffect } from "react";
 import type { SendLog } from "@/lib/types";
+import { useLocale } from "./locale-provider";
 
 export function HistoryTable() {
+  const { t } = useLocale();
   const [logs, setLogs] = useState<SendLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [previewId, setPreviewId] = useState<number | null>(null);
@@ -25,21 +27,21 @@ export function HistoryTable() {
         <table className="w-full text-sm">
           <thead className="bg-gray-50 border-b">
             <tr>
-              <th className="text-left px-4 py-3 font-medium text-gray-600">Date</th>
-              <th className="text-left px-4 py-3 font-medium text-gray-600">Subject</th>
-              <th className="text-left px-4 py-3 font-medium text-gray-600">Recipients</th>
-              <th className="text-left px-4 py-3 font-medium text-gray-600">Status</th>
-              <th className="text-right px-4 py-3 font-medium text-gray-600">Actions</th>
+              <th className="text-left px-4 py-3 font-medium text-gray-600">{t("history.date")}</th>
+              <th className="text-left px-4 py-3 font-medium text-gray-600">{t("history.subject")}</th>
+              <th className="text-left px-4 py-3 font-medium text-gray-600">{t("history.recipients")}</th>
+              <th className="text-left px-4 py-3 font-medium text-gray-600">{t("history.status")}</th>
+              <th className="text-right px-4 py-3 font-medium text-gray-600">{t("actions")}</th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={5} className="text-center py-8 text-gray-500">Loading...</td>
+                <td colSpan={5} className="text-center py-8 text-gray-500">{t("loading")}</td>
               </tr>
             ) : logs.length === 0 ? (
               <tr>
-                <td colSpan={5} className="text-center py-8 text-gray-500">No emails sent yet</td>
+                <td colSpan={5} className="text-center py-8 text-gray-500">{t("history.no_history")}</td>
               </tr>
             ) : (
               logs.map((log) => (
@@ -67,7 +69,7 @@ export function HistoryTable() {
                       onClick={() => setPreviewId(previewId === log.id ? null : log.id)}
                       className="text-blue-600 hover:text-blue-800 text-sm"
                     >
-                      {previewId === log.id ? "Close" : "Preview"}
+                      {previewId === log.id ? t("close") : t("preview")}
                     </button>
                   </td>
                 </tr>
@@ -77,7 +79,6 @@ export function HistoryTable() {
         </table>
       </div>
 
-      {/* Preview modal */}
       {previewLog && (
         <div className="border rounded-lg overflow-hidden">
           <div className="bg-gray-50 px-4 py-2 border-b flex justify-between items-center">
@@ -86,7 +87,7 @@ export function HistoryTable() {
               onClick={() => setPreviewId(null)}
               className="text-gray-500 hover:text-gray-700 text-sm"
             >
-              Close
+              {t("close")}
             </button>
           </div>
           <iframe
