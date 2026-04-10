@@ -7,14 +7,14 @@ type Lang = "ko" | "en";
 
 const content = {
   ko: {
-    nav: { login: "로그인", signup: "시작하기" },
+    nav: { login: "로그인", signup: "시작하기", guide: "설치 가이드" },
     hero: {
-      badge: "AI 기반 이메일 서비스",
+      badge: "설치형 AI 이메일 서비스",
       title: "뉴스레터, 이제\nAI로 쉽게 만드세요",
       subtitle:
-        "템플릿에 맞추느라 시간 낭비하지 마세요. 보내고 싶은 내용을 설명하면 AI가 이메일을 만들어줍니다.",
-      cta: "무료로 시작하기",
-      ctaSub: "신용카드 필요 없음",
+        "SaaS가 아닌 설치형 서비스입니다. 직접 서버에 설치하고, 데이터를 소유하세요. 템플릿 없이 AI가 이메일을 만들어줍니다.",
+      cta: "설치 가이드 보기",
+      ctaSub: "오픈소스 · 무료 · 셀프호스팅",
     },
     features: {
       title: "왜 다를까요?",
@@ -32,8 +32,8 @@ const content = {
           desc: "AI가 이메일을 생성하는 과정을 실시간으로 볼 수 있습니다. 마음에 들지 않으면 바로 수정하거나 다시 생성하세요.",
         },
         {
-          title: "대량 발송",
-          desc: "Resend 기반의 안정적인 이메일 인프라로 수천 명에게 한 번에 발송합니다.",
+          title: "설치형 · 데이터 소유",
+          desc: "SaaS에 종속되지 않습니다. 서버에 직접 설치하고 모든 데이터를 소유합니다. 오픈소스로 자유롭게 커스터마이징하세요.",
         },
       ],
     },
@@ -46,21 +46,21 @@ const content = {
       ],
     },
     cta: {
-      title: "지금 시작하세요",
-      subtitle: "복잡한 이메일 빌더는 잊으세요. AI에게 맡기세요.",
-      button: "무료로 시작하기",
+      title: "직접 설치해보세요",
+      subtitle: "5분이면 설치 완료. 서버 하나면 충분합니다.",
+      button: "설치 가이드 보기",
     },
     footer: "Alineteam",
   },
   en: {
-    nav: { login: "Log in", signup: "Get Started" },
+    nav: { login: "Log in", signup: "Get Started", guide: "Install Guide" },
     hero: {
-      badge: "AI-Powered Email Service",
+      badge: "Self-Hosted AI Email Service",
       title: "Create newsletters\neffortlessly with AI",
       subtitle:
-        "Stop wasting time fitting content into templates. Just describe what you want to send and AI creates the email for you.",
-      cta: "Get Started Free",
-      ctaSub: "No credit card required",
+        "Not a SaaS — self-hosted. Install on your server, own your data. No templates needed — AI generates emails for you.",
+      cta: "View Install Guide",
+      ctaSub: "Open source · Free · Self-hosted",
     },
     features: {
       title: "Why it's different",
@@ -78,8 +78,8 @@ const content = {
           desc: "Watch AI generate your email in real-time. Edit or regenerate instantly if needed.",
         },
         {
-          title: "Bulk Sending",
-          desc: "Send to thousands at once with reliable Resend-powered email infrastructure.",
+          title: "Self-Hosted · Own Your Data",
+          desc: "No SaaS lock-in. Install on your server, own all your data. Open source and fully customizable.",
         },
       ],
     },
@@ -92,9 +92,9 @@ const content = {
       ],
     },
     cta: {
-      title: "Start now",
-      subtitle: "Forget complex email builders. Let AI handle it.",
-      button: "Get Started Free",
+      title: "Install it yourself",
+      subtitle: "5 minutes to install. All you need is one server.",
+      button: "View Install Guide",
     },
     footer: "Alineteam",
   },
@@ -111,7 +111,7 @@ const featureIcons = [
   <svg key="ai" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" /></svg>,
   <svg key="group" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>,
   <svg key="preview" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>,
-  <svg key="send" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg>,
+  <svg key="server" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="2" width="20" height="8" rx="2" /><rect x="2" y="14" width="20" height="8" rx="2" /><line x1="6" y1="6" x2="6.01" y2="6" /><line x1="6" y1="18" x2="6.01" y2="18" /></svg>,
 ];
 
 export default function LandingPage() {
@@ -139,6 +139,9 @@ export default function LandingPage() {
             >
               {lang === "ko" ? "EN" : "KO"}
             </button>
+            <Link href="/guide" className="text-[13px] text-[#6b7280] hover:text-[#111827] font-medium transition-colors">
+              {t.nav.guide}
+            </Link>
             <Link href="/login" className="text-[13px] text-[#6b7280] hover:text-[#111827] font-medium transition-colors">
               {t.nav.login}
             </Link>
@@ -169,7 +172,7 @@ export default function LandingPage() {
           </p>
           <div className="mt-8 flex flex-col items-center gap-2">
             <Link
-              href="/signup"
+              href="/guide"
               className="inline-flex items-center gap-2 bg-gradient-to-r from-[#2B7FFF] to-[#00C950] text-white text-[14px] font-medium px-7 py-3 rounded-full hover:opacity-90 transition-opacity shadow-lg shadow-[#155DFC]/20"
             >
               {t.hero.cta}
@@ -233,7 +236,7 @@ export default function LandingPage() {
           </h2>
           <p className="mt-3 text-[15px] text-[#9ca3af]">{t.cta.subtitle}</p>
           <Link
-            href="/signup"
+            href="/guide"
             className="mt-8 inline-flex items-center gap-2 bg-gradient-to-r from-[#2B7FFF] to-[#00C950] text-white text-[14px] font-medium px-7 py-3 rounded-full hover:opacity-90 transition-opacity"
           >
             {t.cta.button}
@@ -249,8 +252,8 @@ export default function LandingPage() {
         <div className="max-w-5xl mx-auto flex items-center justify-between text-[12px] text-[#9ca3af]">
           <span>&copy; {new Date().getFullYear()} {t.footer}</span>
           <div className="flex items-center gap-4">
+            <Link href="/guide" className="hover:text-[#6b7280] transition-colors">{t.nav.guide}</Link>
             <Link href="/login" className="hover:text-[#6b7280] transition-colors">{t.nav.login}</Link>
-            <Link href="/signup" className="hover:text-[#6b7280] transition-colors">{t.nav.signup}</Link>
           </div>
         </div>
       </footer>

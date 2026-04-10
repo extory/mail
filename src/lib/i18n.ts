@@ -92,6 +92,20 @@ const translations = {
     "dashboard.drafts.title": "Drafts",
     "dashboard.drafts.desc": "View and edit saved email drafts.",
 
+    // Invitations
+    "nav.invitations": "Invitations",
+    "invitations.title": "Invitations",
+    "invitations.description": "Invite users to sign up. Only invited users can create accounts.",
+    "invitations.email": "Email to invite",
+    "invitations.send": "Send Invite",
+    "invitations.no_invitations": "No invitations yet",
+    "invitations.status": "Status",
+    "invitations.status.pending": "Pending",
+    "invitations.status.used": "Used",
+    "invitations.copy": "Copy Link",
+    "invitations.copied": "Copied!",
+    "invitations.delete_confirm": "Delete this invitation?",
+
     // History
     "history.title": "Send History",
     "history.date": "Date",
@@ -192,6 +206,20 @@ const translations = {
     "drafts.no_subject": "(제목 없음)",
     "dashboard.drafts.title": "임시저장",
     "dashboard.drafts.desc": "저장된 이메일 초안을 확인하고 수정합니다.",
+
+    // Invitations
+    "nav.invitations": "초대 관리",
+    "invitations.title": "초대 관리",
+    "invitations.description": "사용자를 초대합니다. 초대받은 사용자만 가입할 수 있습니다.",
+    "invitations.email": "초대할 이메일",
+    "invitations.send": "초대하기",
+    "invitations.no_invitations": "초대 내역이 없습니다",
+    "invitations.status": "상태",
+    "invitations.status.pending": "대기",
+    "invitations.status.used": "사용됨",
+    "invitations.copy": "링크 복사",
+    "invitations.copied": "복사됨!",
+    "invitations.delete_confirm": "이 초대를 삭제하시겠습니까?",
 
     // History
     "history.title": "발송 이력",

@@ -2,12 +2,15 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense } from "react";
 
-export default function SignupPage() {
+function SignupForm() {
   const router = useRouter();
-  const [email, setEmail] = useState("");
+  const searchParams = useSearchParams();
+  const [email, setEmail] = useState(searchParams.get("email") || "");
   const [password, setPassword] = useState("");
+  const [inviteCode, setInviteCode] = useState(searchParams.get("code") || "");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -19,7 +22,7 @@ export default function SignupPage() {
       const res = await fetch("/api/auth/signup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ email, password, inviteCode }),
       });
       const data = await res.json();
       if (data.error) {
@@ -50,9 +53,21 @@ export default function SignupPage() {
         </div>
 
         <div className="bg-white rounded-xl border border-[#e5e7eb] p-6">
-          <h1 className="text-[18px] font-semibold text-center mb-6">Create account</h1>
+          <h1 className="text-[18px] font-semibold text-center mb-1">Create account</h1>
+          <p className="text-[12px] text-[#9ca3af] text-center mb-6">Invitation required</p>
 
           <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <label className="block text-[12px] font-medium text-[#6b7280] mb-1.5">Invitation Code</label>
+              <input
+                type="text"
+                value={inviteCode}
+                onChange={(e) => setInviteCode(e.target.value)}
+                placeholder="Paste your invitation code"
+                className="w-full border border-[#e5e7eb] rounded-lg px-3 h-[38px] text-[13px] focus:outline-none focus:ring-2 focus:ring-[#155DFC]/20 focus:border-[#155DFC] transition-all placeholder:text-[#9ca3af] font-mono"
+                required
+              />
+            </div>
             <div>
               <label className="block text-[12px] font-medium text-[#6b7280] mb-1.5">Email</label>
               <input
@@ -93,11 +108,17 @@ export default function SignupPage() {
 
         <p className="text-center text-[12px] text-[#9ca3af] mt-4">
           Already have an account?{" "}
-          <Link href="/login" className="text-[#155DFC] hover:underline font-medium">
-            Log in
-          </Link>
+          <Link href="/login" className="text-[#155DFC] hover:underline font-medium">Log in</Link>
         </p>
       </div>
     </div>
+  );
+}
+
+export default function SignupPage() {
+  return (
+    <Suspense>
+      <SignupForm />
+    </Suspense>
   );
 }

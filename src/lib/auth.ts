@@ -1,7 +1,7 @@
 import { SignJWT, jwtVerify } from "jose";
 import { hashSync, compareSync } from "bcryptjs";
 import { cookies } from "next/headers";
-import { getUserByEmail, createUser } from "./db";
+import { getUserByEmail, createUser, getInvitationByCode, markInvitationUsed } from "./db";
 
 const JWT_SECRET = new TextEncoder().encode(
   process.env.JWT_SECRET || "mail-service-secret-key-change-in-production"
@@ -9,14 +9,25 @@ const JWT_SECRET = new TextEncoder().encode(
 const COOKIE_NAME = "mail_session";
 const SUPER_USER = "nick@extory.co";
 
-export async function signUp(email: string, password: string) {
+export async function signUp(email: string, password: string, inviteCode: string) {
+  // Validate invite code
+  const invitation = getInvitationByCode(inviteCode);
+  if (!invitation) {
+    return { error: "Invalid or expired invitation code" };
+  }
+  if (invitation.email !== email) {
+    return { error: "This invitation was sent to a different email" };
+  }
+
   const existing = getUserByEmail(email);
   if (existing) {
     return { error: "Email already registered" };
   }
+
   const hash = hashSync(password, 10);
-  const role = email === SUPER_USER ? "admin" : "user";
-  const user = createUser(email, hash, role);
+  const user = createUser(email, hash, "user");
+  markInvitationUsed(invitation.id);
+
   const token = await createToken(user.id, user.email, user.role);
   await setSessionCookie(token);
   return { user: { id: user.id, email: user.email, role: user.role } };
@@ -65,12 +76,11 @@ async function setSessionCookie(token: string) {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
-    maxAge: 60 * 60 * 24 * 7, // 7 days
+    maxAge: 60 * 60 * 24 * 7,
     path: "/",
   });
 }
 
-// Seed super user on first run
 export function ensureSuperUser() {
   const existing = getUserByEmail(SUPER_USER);
   if (!existing) {

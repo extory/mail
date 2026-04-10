@@ -21,8 +21,13 @@ npm ci --production=false
 echo "[3/4] Building..."
 npm run build
 
-# 4. Create logs dir
-mkdir -p "$APP_DIR/logs"
+# 4. Ensure data & logs dirs
+mkdir -p "$APP_DIR/logs" "$APP_DIR/data"
+if [ -f "$APP_DIR/data/mail.db" ]; then
+  echo "    Database exists ($(du -h "$APP_DIR/data/mail.db" | cut -f1))"
+else
+  echo "    No database yet - will be created on first request"
+fi
 
 # 5. Restart with pm2
 echo "[4/4] Restarting service..."

@@ -12,6 +12,7 @@ const protectedPaths = [
   "/drafts",
   "/compose",
   "/history",
+  "/invitations",
 ];
 
 export async function middleware(request: NextRequest) {
@@ -55,6 +56,7 @@ export const config = {
     "/drafts/:path*",
     "/compose/:path*",
     "/history/:path*",
+    "/invitations/:path*",
     "/api/((?!auth/).*)",
   ],
 };

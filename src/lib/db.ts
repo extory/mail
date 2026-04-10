@@ -18,6 +18,15 @@ function getDb(): Database.Database {
         role TEXT DEFAULT 'user',
         created_at TEXT DEFAULT (datetime('now'))
       );
+      CREATE TABLE IF NOT EXISTS invitations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        email TEXT UNIQUE NOT NULL,
+        code TEXT UNIQUE NOT NULL,
+        invited_by INTEGER NOT NULL,
+        used INTEGER DEFAULT 0,
+        created_at TEXT DEFAULT (datetime('now')),
+        FOREIGN KEY (invited_by) REFERENCES users(id)
+      );
       CREATE TABLE IF NOT EXISTS groups (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT UNIQUE NOT NULL,
@@ -206,6 +215,43 @@ export function createUser(email: string, passwordHash: string, role: string = "
   const db = getDb();
   const result = db.prepare("INSERT INTO users (email, password_hash, role) VALUES (?, ?, ?)").run(email, passwordHash, role);
   return db.prepare("SELECT * FROM users WHERE id = ?").get(result.lastInsertRowid) as DbUser;
+}
+
+// --- Invitations ---
+
+export interface DbInvitation {
+  id: number;
+  email: string;
+  code: string;
+  invited_by: number;
+  used: number;
+  created_at: string;
+}
+
+export function createInvitation(email: string, code: string, invitedBy: number): DbInvitation {
+  const db = getDb();
+  const result = db.prepare("INSERT INTO invitations (email, code, invited_by) VALUES (?, ?, ?)").run(email, code, invitedBy);
+  return db.prepare("SELECT * FROM invitations WHERE id = ?").get(result.lastInsertRowid) as DbInvitation;
+}
+
+export function getInvitationByCode(code: string): DbInvitation | undefined {
+  const db = getDb();
+  return db.prepare("SELECT * FROM invitations WHERE code = ? AND used = 0").get(code) as DbInvitation | undefined;
+}
+
+export function markInvitationUsed(id: number): void {
+  const db = getDb();
+  db.prepare("UPDATE invitations SET used = 1 WHERE id = ?").run(id);
+}
+
+export function getInvitations(): DbInvitation[] {
+  const db = getDb();
+  return db.prepare("SELECT * FROM invitations ORDER BY created_at DESC").all() as DbInvitation[];
+}
+
+export function deleteInvitation(id: number): void {
+  const db = getDb();
+  db.prepare("DELETE FROM invitations WHERE id = ?").run(id);
 }
 
 // --- Send Log ---
