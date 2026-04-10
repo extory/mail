@@ -1,9 +1,11 @@
 import { Resend } from "resend";
+import { buildUnsubscribeUrl, wrapHtmlWithUnsubscribeFooter } from "./unsubscribe";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
 const SENDER_EMAIL = process.env.SENDER_EMAIL || "onboarding@resend.dev";
 const SENDER_NAME = process.env.SENDER_NAME || "Newsletter";
+const BASE_URL = process.env.BASE_URL || "https://mail.extory.co";
 
 interface Recipient {
   email: string;
@@ -22,12 +24,20 @@ export async function sendBulkEmails(
 
   for (let i = 0; i < recipients.length; i += BATCH_SIZE) {
     const batch = recipients.slice(i, i + BATCH_SIZE);
-    const emails = batch.map((r) => ({
-      from: `${SENDER_NAME} <${SENDER_EMAIL}>`,
-      to: [r.email],
-      subject,
-      html: htmlContent,
-    }));
+    const emails = batch.map((r) => {
+      const unsubUrl = buildUnsubscribeUrl(BASE_URL, r.email);
+      const html = wrapHtmlWithUnsubscribeFooter(htmlContent, unsubUrl);
+      return {
+        from: `${SENDER_NAME} <${SENDER_EMAIL}>`,
+        to: [r.email],
+        subject,
+        html,
+        headers: {
+          "List-Unsubscribe": `<${unsubUrl}>`,
+          "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+        },
+      };
+    });
 
     try {
       const result = await resend.batch.send(emails);

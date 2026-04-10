@@ -147,6 +147,12 @@ export function removeSubscriber(id: number): void {
   db.prepare("UPDATE subscribers SET status = 'unsubscribed' WHERE id = ?").run(id);
 }
 
+export function unsubscribeByEmail(email: string): boolean {
+  const db = getDb();
+  const result = db.prepare("UPDATE subscribers SET status = 'unsubscribed' WHERE email = ? AND status = 'active'").run(email);
+  return result.changes > 0;
+}
+
 export function importSubscribers(
   rows: { email: string; name?: string }[],
   groupId?: number

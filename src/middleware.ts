@@ -23,7 +23,8 @@ export async function middleware(request: NextRequest) {
   );
 
   const isProtectedApi = pathname.startsWith("/api/") &&
-    !pathname.startsWith("/api/auth/");
+    !pathname.startsWith("/api/auth/") &&
+    !pathname.startsWith("/api/unsubscribe");
 
   if (!isProtected && !isProtectedApi) {
     return NextResponse.next();
