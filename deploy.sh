@@ -1,12 +1,13 @@
 #!/bin/bash
 set -e
 
-APP_DIR="/Users/nick/mail"
+APP_DIR="$(cd "$(dirname "$0")" && pwd)"
 APP_NAME="mail"
 
 cd "$APP_DIR"
 
 echo "=== Mail Service Deploy ==="
+echo "Directory: $APP_DIR"
 
 # 1. Pull latest
 echo "[1/4] Pulling latest code..."

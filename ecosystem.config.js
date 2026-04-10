@@ -1,10 +1,13 @@
+const path = require("path");
+const appDir = path.resolve(__dirname);
+
 module.exports = {
   apps: [
     {
       name: "mail",
       script: "node_modules/.bin/next",
       args: "start -p 3100",
-      cwd: "/Users/nick/mail",
+      cwd: appDir,
       env: {
         NODE_ENV: "production",
         PORT: 3100,
@@ -15,8 +18,8 @@ module.exports = {
       watch: false,
       max_memory_restart: "500M",
       log_date_format: "YYYY-MM-DD HH:mm:ss",
-      error_file: "/Users/nick/mail/logs/error.log",
-      out_file: "/Users/nick/mail/logs/out.log",
+      error_file: path.join(appDir, "logs", "error.log"),
+      out_file: path.join(appDir, "logs", "out.log"),
       merge_logs: true,
     },
   ],
