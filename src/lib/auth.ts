@@ -1,27 +1,51 @@
 import { SignJWT, jwtVerify } from "jose";
 import { hashSync, compareSync } from "bcryptjs";
 import { cookies } from "next/headers";
-import { getUserByEmail, createUser, getInvitationByCode, markInvitationUsed } from "./db";
+import {
+  getUserByEmail,
+  getUserCount,
+  createUser,
+  getInvitationByCode,
+  markInvitationUsed,
+} from "./db";
 
 const JWT_SECRET = new TextEncoder().encode(
   process.env.JWT_SECRET || "mail-service-secret-key-change-in-production"
 );
 const COOKIE_NAME = "mail_session";
-const SUPER_USER = "nick@extory.co";
 
-export async function signUp(email: string, password: string, inviteCode: string) {
-  // Validate invite code
+export function isFirstUser(): boolean {
+  return getUserCount() === 0;
+}
+
+export async function signUp(email: string, password: string, inviteCode?: string) {
+  const existing = getUserByEmail(email);
+  if (existing) {
+    return { error: "Email already registered" };
+  }
+
+  const firstUser = isFirstUser();
+
+  if (firstUser) {
+    // First user becomes admin, no invite code needed
+    const hash = hashSync(password, 10);
+    const user = createUser(email, hash, "admin");
+    const token = await createToken(user.id, user.email, user.role);
+    await setSessionCookie(token);
+    return { user: { id: user.id, email: user.email, role: user.role } };
+  }
+
+  // Subsequent users need an invite code
+  if (!inviteCode) {
+    return { error: "Invitation code is required" };
+  }
+
   const invitation = getInvitationByCode(inviteCode);
   if (!invitation) {
     return { error: "Invalid or expired invitation code" };
   }
   if (invitation.email !== email) {
     return { error: "This invitation was sent to a different email" };
-  }
-
-  const existing = getUserByEmail(email);
-  if (existing) {
-    return { error: "Email already registered" };
   }
 
   const hash = hashSync(password, 10);
@@ -79,12 +103,4 @@ async function setSessionCookie(token: string) {
     maxAge: 60 * 60 * 24 * 7,
     path: "/",
   });
-}
-
-export function ensureSuperUser() {
-  const existing = getUserByEmail(SUPER_USER);
-  if (!existing) {
-    const hash = hashSync("admin1234", 10);
-    createUser(SUPER_USER, hash, "admin");
-  }
 }

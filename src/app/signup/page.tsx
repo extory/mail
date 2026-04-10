@@ -1,9 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, Suspense } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense } from "react";
 
 function SignupForm() {
   const router = useRouter();
@@ -13,6 +12,13 @@ function SignupForm() {
   const [inviteCode, setInviteCode] = useState(searchParams.get("code") || "");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [firstUser, setFirstUser] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    fetch("/api/auth/status")
+      .then((r) => r.json())
+      .then((d) => setFirstUser(d.firstUser));
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -22,7 +28,11 @@ function SignupForm() {
       const res = await fetch("/api/auth/signup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password, inviteCode }),
+        body: JSON.stringify({
+          email,
+          password,
+          inviteCode: firstUser ? undefined : inviteCode,
+        }),
       });
       const data = await res.json();
       if (data.error) {
@@ -36,6 +46,8 @@ function SignupForm() {
       setLoading(false);
     }
   };
+
+  if (firstUser === null) return null;
 
   return (
     <div className="min-h-screen bg-[#f8fafc] flex items-center justify-center px-4">
@@ -53,21 +65,29 @@ function SignupForm() {
         </div>
 
         <div className="bg-white rounded-xl border border-[#e5e7eb] p-6">
-          <h1 className="text-[18px] font-semibold text-center mb-1">Create account</h1>
-          <p className="text-[12px] text-[#9ca3af] text-center mb-6">Invitation required</p>
+          <h1 className="text-[18px] font-semibold text-center mb-1">
+            {firstUser ? "Create Admin Account" : "Create account"}
+          </h1>
+          <p className="text-[12px] text-[#9ca3af] text-center mb-6">
+            {firstUser
+              ? "First user becomes the administrator"
+              : "Invitation required"}
+          </p>
 
           <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label className="block text-[12px] font-medium text-[#6b7280] mb-1.5">Invitation Code</label>
-              <input
-                type="text"
-                value={inviteCode}
-                onChange={(e) => setInviteCode(e.target.value)}
-                placeholder="Paste your invitation code"
-                className="w-full border border-[#e5e7eb] rounded-lg px-3 h-[38px] text-[13px] focus:outline-none focus:ring-2 focus:ring-[#155DFC]/20 focus:border-[#155DFC] transition-all placeholder:text-[#9ca3af] font-mono"
-                required
-              />
-            </div>
+            {!firstUser && (
+              <div>
+                <label className="block text-[12px] font-medium text-[#6b7280] mb-1.5">Invitation Code</label>
+                <input
+                  type="text"
+                  value={inviteCode}
+                  onChange={(e) => setInviteCode(e.target.value)}
+                  placeholder="Paste your invitation code"
+                  className="w-full border border-[#e5e7eb] rounded-lg px-3 h-[38px] text-[13px] focus:outline-none focus:ring-2 focus:ring-[#155DFC]/20 focus:border-[#155DFC] transition-all placeholder:text-[#9ca3af] font-mono"
+                  required
+                />
+              </div>
+            )}
             <div>
               <label className="block text-[12px] font-medium text-[#6b7280] mb-1.5">Email</label>
               <input
@@ -101,7 +121,7 @@ function SignupForm() {
               disabled={loading}
               className="w-full bg-[#155DFC] text-white h-[38px] rounded-lg text-[13px] font-medium hover:bg-[#0f4ad4] disabled:opacity-50 transition-colors"
             >
-              {loading ? "..." : "Create account"}
+              {loading ? "..." : firstUser ? "Create Admin Account" : "Create account"}
             </button>
           </form>
         </div>

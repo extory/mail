@@ -50,8 +50,8 @@ nano .env.local
       },
       {
         title: "5. 접속 및 로그인",
-        desc: "브라우저에서 접속합니다. 초기 관리자 계정으로 로그인하세요.",
-        code: "URL: https://mail.yourdomain.com\n이메일: nick@extory.co\n비밀번호: admin1234\n\n※ 로그인 후 반드시 비밀번호를 변경하세요",
+        desc: "브라우저에서 접속합니다. 첫 번째 가입자가 관리자(Admin)가 됩니다.",
+        code: "URL: https://mail.yourdomain.com/signup\n\n첫 번째 가입 → 자동으로 관리자 계정 생성\n이후 가입 → 관리자의 초대가 필요",
       },
     ],
     update: {
@@ -118,8 +118,8 @@ nano .env.local
       },
       {
         title: "5. Access and login",
-        desc: "Open your browser and log in with the default admin account.",
-        code: "URL: https://mail.yourdomain.com\nEmail: nick@extory.co\nPassword: admin1234\n\n※ Change the password after first login",
+        desc: "Open your browser. The first user to sign up becomes the admin.",
+        code: "URL: https://mail.yourdomain.com/signup\n\nFirst signup → automatically becomes Admin\nSubsequent signups → require admin invitation",
       },
     ],
     update: {

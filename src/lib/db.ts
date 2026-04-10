@@ -206,6 +206,12 @@ export interface DbUser {
   created_at: string;
 }
 
+export function getUserCount(): number {
+  const db = getDb();
+  const row = db.prepare("SELECT COUNT(*) as count FROM users").get() as { count: number };
+  return row.count;
+}
+
 export function getUserByEmail(email: string): DbUser | undefined {
   const db = getDb();
   return db.prepare("SELECT * FROM users WHERE email = ?").get(email) as DbUser | undefined;
