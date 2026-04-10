@@ -69,8 +69,15 @@ nano .env.local
       ],
     },
     invite: {
-      title: "사용자 초대",
-      desc: "회원가입은 초대제로 운영됩니다. 관리자가 대시보드의 '초대 관리' 메뉴에서 이메일을 입력하면 초대 링크가 생성됩니다. 초대받은 사용자만 가입할 수 있습니다.",
+      title: "계정 및 초대",
+      steps: [
+        "설치 후 /signup 에 접속하면 'Create Admin Account' 화면이 표시됩니다.",
+        "첫 번째 가입자가 자동으로 관리자(Admin)가 됩니다. 초대 코드가 필요 없습니다.",
+        "관리자 로그인 후 사이드바의 '초대 관리' 메뉴에서 이메일을 입력하고 초대합니다.",
+        "'링크 복사' 버튼을 클릭하면 초대 링크가 클립보드에 복사됩니다.",
+        "초대받은 사용자가 해당 링크로 접속하면 초대 코드와 이메일이 자동 입력됩니다.",
+        "초대 없이는 가입할 수 없습니다.",
+      ],
     },
     back: "홈으로",
   },
@@ -137,8 +144,15 @@ nano .env.local
       ],
     },
     invite: {
-      title: "Inviting users",
-      desc: "Signup is invite-only. Admins can invite users from the 'Invitations' menu in the dashboard. Only invited users can create accounts.",
+      title: "Accounts & Invitations",
+      steps: [
+        "After installation, visit /signup — you'll see 'Create Admin Account'.",
+        "The first signup automatically becomes the Admin. No invite code needed.",
+        "Once logged in, go to 'Invitations' in the sidebar and enter an email to invite.",
+        "Click 'Copy Link' to copy the invite URL to your clipboard.",
+        "When the invited user opens the link, the invite code and email are pre-filled.",
+        "Signup is impossible without an invitation.",
+      ],
     },
     back: "Back to home",
   },
@@ -229,8 +243,17 @@ export default function GuidePage() {
 
         {/* Invite */}
         <section className="mt-10 bg-[#155DFC]/[0.04] border border-[#155DFC]/10 rounded-xl p-5">
-          <h3 className="text-[15px] font-semibold mb-2">{t.invite.title}</h3>
-          <p className="text-[13px] text-[#6b7280] leading-relaxed">{t.invite.desc}</p>
+          <h3 className="text-[15px] font-semibold mb-3">{t.invite.title}</h3>
+          <ol className="space-y-2">
+            {t.invite.steps.map((step, i) => (
+              <li key={i} className="flex items-start gap-2.5 text-[13px] text-[#374151] leading-relaxed">
+                <span className="flex-shrink-0 w-5 h-5 rounded-full bg-[#155DFC]/10 text-[#155DFC] text-[11px] font-semibold flex items-center justify-center mt-0.5">
+                  {i + 1}
+                </span>
+                {step}
+              </li>
+            ))}
+          </ol>
         </section>
       </div>
     </div>
