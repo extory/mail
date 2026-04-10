@@ -8,7 +8,7 @@ import type { TranslationKey } from "@/lib/i18n";
 
 const navItems: { href: string; labelKey: TranslationKey; icon: React.ReactNode }[] = [
   {
-    href: "/",
+    href: "/dashboard",
     labelKey: "nav.dashboard",
     icon: (
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -99,7 +99,7 @@ export function Sidebar() {
         {navItems.map((item) => {
           const isActive =
             pathname === item.href ||
-            (item.href !== "/" && pathname.startsWith(item.href));
+            (item.href !== "/dashboard" && pathname.startsWith(item.href));
           return (
             <Link
               key={item.href}
@@ -117,8 +117,8 @@ export function Sidebar() {
         })}
       </nav>
 
-      {/* Language selector */}
-      <div className="px-3 pb-5">
+      {/* Bottom controls */}
+      <div className="px-3 pb-5 space-y-2">
         <select
           value={locale}
           onChange={(e) => setLocale(e.target.value as Locale)}
@@ -130,6 +130,20 @@ export function Sidebar() {
             </option>
           ))}
         </select>
+        <button
+          onClick={async () => {
+            await fetch("/api/auth/logout", { method: "POST" });
+            window.location.href = "/";
+          }}
+          className="w-full text-[12px] text-text-muted hover:text-danger px-3 py-2 rounded-lg hover:bg-surface transition-all text-left flex items-center gap-2"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+            <polyline points="16 17 21 12 16 7" />
+            <line x1="21" y1="12" x2="9" y2="12" />
+          </svg>
+          Logout
+        </button>
       </div>
     </aside>
   );

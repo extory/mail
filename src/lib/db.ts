@@ -11,6 +11,13 @@ function getDb(): Database.Database {
     db = new Database(DB_PATH);
     db.pragma("journal_mode = WAL");
     db.exec(`
+      CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        email TEXT UNIQUE NOT NULL,
+        password_hash TEXT NOT NULL,
+        role TEXT DEFAULT 'user',
+        created_at TEXT DEFAULT (datetime('now'))
+      );
       CREATE TABLE IF NOT EXISTS groups (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT UNIQUE NOT NULL,
@@ -178,6 +185,27 @@ export function saveDraft(subject: string, htmlContent: string, prompt: string, 
 export function deleteDraft(id: number): void {
   const db = getDb();
   db.prepare("DELETE FROM drafts WHERE id = ?").run(id);
+}
+
+// --- Users ---
+
+export interface DbUser {
+  id: number;
+  email: string;
+  password_hash: string;
+  role: string;
+  created_at: string;
+}
+
+export function getUserByEmail(email: string): DbUser | undefined {
+  const db = getDb();
+  return db.prepare("SELECT * FROM users WHERE email = ?").get(email) as DbUser | undefined;
+}
+
+export function createUser(email: string, passwordHash: string, role: string = "user"): DbUser {
+  const db = getDb();
+  const result = db.prepare("INSERT INTO users (email, password_hash, role) VALUES (?, ?, ?)").run(email, passwordHash, role);
+  return db.prepare("SELECT * FROM users WHERE id = ?").get(result.lastInsertRowid) as DbUser;
 }
 
 // --- Send Log ---
