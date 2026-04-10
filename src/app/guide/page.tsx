@@ -154,6 +154,65 @@ npm run start`,
         "데이터는 프로젝트 폴더의 data/mail.db 파일에 저장됩니다.",
       ],
     },
+    changelog: {
+      title: "릴리즈 노트",
+      releases: [
+        {
+          version: "v1.4.0",
+          date: "2026-04-11",
+          items: [
+            "이메일 수신거부(Unsubscribe) 기능 추가",
+            "발송 이메일 하단에 수신거부 링크 자동 삽입",
+            "List-Unsubscribe 헤더 지원 (Gmail 등 원클릭 수신거부)",
+            "수신거부된 구독자는 이후 발송에서 자동 제외",
+          ],
+        },
+        {
+          version: "v1.3.0",
+          date: "2026-04-10",
+          items: [
+            "첫 가입자가 자동으로 관리자(Admin) 계정 생성",
+            "초대제 회원가입 구현 (관리자만 초대 가능)",
+            "초대 관리 페이지 추가 (링크 복사, 삭제)",
+            "하드코딩된 슈퍼유저 제거 → 오픈소스 배포 가능",
+          ],
+        },
+        {
+          version: "v1.2.0",
+          date: "2026-04-10",
+          items: [
+            "랜딩페이지 추가 (설치형 서비스 소개, 한/영)",
+            "이메일 기반 로그인/회원가입 시스템",
+            "JWT 쿠키 세션 + 미들웨어로 대시보드 보호",
+            "설치 가이드 페이지 (서버 배포 / PC 실행 탭)",
+          ],
+        },
+        {
+          version: "v1.1.0",
+          date: "2026-04-10",
+          items: [
+            "이메일 임시저장(Draft) 기능",
+            "aline.team 톤앤매너에 맞춘 UI 리디자인",
+            "발송 실패 시 Resend API 에러 메시지 표시",
+            "pm2 + nginx 배포 설정 파일 추가",
+            "CSV 양식 다운로드 버튼 추가",
+          ],
+        },
+        {
+          version: "v1.0.0",
+          date: "2026-04-10",
+          items: [
+            "AI 이메일 생성 (Claude / Gemini 선택)",
+            "실시간 스트리밍 미리보기",
+            "구독자 관리 (추가, 삭제, CSV 가져오기)",
+            "구독자 그룹 관리 및 그룹별 발송",
+            "Resend 기반 대량 발송",
+            "발송 이력 조회 및 미리보기",
+            "다국어 지원 (한국어 / English)",
+          ],
+        },
+      ],
+    },
     back: "홈으로",
   },
   en: {
@@ -303,6 +362,65 @@ npm run start`,
         "Data is stored in data/mail.db inside the project folder.",
       ],
     },
+    changelog: {
+      title: "Release Notes",
+      releases: [
+        {
+          version: "v1.4.0",
+          date: "2026-04-11",
+          items: [
+            "Email unsubscribe flow added",
+            "Unsubscribe footer auto-appended to every sent email",
+            "List-Unsubscribe header support (Gmail one-click unsubscribe)",
+            "Unsubscribed users automatically excluded from future sends",
+          ],
+        },
+        {
+          version: "v1.3.0",
+          date: "2026-04-10",
+          items: [
+            "First signup automatically becomes Admin",
+            "Invite-only signup (admin creates invitations)",
+            "Invitation management page (copy link, delete)",
+            "Removed hardcoded super user → open source ready",
+          ],
+        },
+        {
+          version: "v1.2.0",
+          date: "2026-04-10",
+          items: [
+            "Landing page (self-hosted service intro, KO/EN)",
+            "Email-based login/signup system",
+            "JWT cookie sessions + middleware route protection",
+            "Install guide page (server deploy / PC run tabs)",
+          ],
+        },
+        {
+          version: "v1.1.0",
+          date: "2026-04-10",
+          items: [
+            "Email drafts (save/load)",
+            "UI redesign matching aline.team style",
+            "Send failure shows Resend API error message",
+            "pm2 + nginx deploy configuration",
+            "CSV template download button",
+          ],
+        },
+        {
+          version: "v1.0.0",
+          date: "2026-04-10",
+          items: [
+            "AI email generation (Claude / Gemini)",
+            "Real-time streaming preview",
+            "Subscriber management (add, remove, CSV import)",
+            "Subscriber groups and group-targeted sending",
+            "Resend-powered bulk email sending",
+            "Send history with preview",
+            "Bilingual support (Korean / English)",
+          ],
+        },
+      ],
+    },
     back: "Back to home",
   },
 };
@@ -440,6 +558,36 @@ export default function GuidePage() {
               </li>
             ))}
           </ol>
+        </section>
+
+        {/* Release Notes */}
+        <section className="mt-12 pt-10 border-t border-[#f3f4f6]">
+          <h2 className="text-[18px] font-semibold mb-6">{t.changelog.title}</h2>
+          <div className="space-y-8">
+            {t.changelog.releases.map((release, i) => (
+              <div key={i}>
+                <div className="flex items-center gap-3 mb-3">
+                  <span className="text-[14px] font-semibold text-[#111827]">{release.version}</span>
+                  <span className="text-[12px] text-[#9ca3af]">{release.date}</span>
+                  {i === 0 && (
+                    <span className="text-[10px] font-semibold bg-[#00C950]/10 text-[#00C950] px-2 py-0.5 rounded-full">
+                      Latest
+                    </span>
+                  )}
+                </div>
+                <ul className="space-y-1.5">
+                  {release.items.map((item, j) => (
+                    <li key={j} className="flex items-start gap-2 text-[13px] text-[#374151] leading-relaxed">
+                      <span className="text-[#155DFC] mt-1 flex-shrink-0">
+                        <svg width="10" height="10" viewBox="0 0 10 10"><circle cx="5" cy="5" r="2.5" fill="currentColor" /></svg>
+                      </span>
+                      {item}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
         </section>
       </div>
     </div>
