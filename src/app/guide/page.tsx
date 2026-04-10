@@ -144,6 +144,19 @@ npm run start`,
         "초대 없이는 가입할 수 없습니다.",
       ],
     },
+    webhook: {
+      title: "Resend 웹훅 설정 (이메일 통계)",
+      desc: "이메일 발송 통계(전송 성공, 오픈, 클릭, 바운스 등)를 추적하려면 Resend 웹훅을 설정해야 합니다.",
+      steps: [
+        "https://resend.com/webhooks 에 접속합니다.",
+        "'Add Webhook' 버튼을 클릭합니다.",
+        "URL에 https://내-도메인/api/webhooks/resend 을 입력합니다.",
+        "Events에서 다음을 선택합니다: email.delivered, email.bounced, email.opened, email.clicked, email.failed, email.complained",
+        "'Create' 버튼을 클릭해 저장합니다.",
+        "설정 완료 후 이메일을 발송하면 통계 페이지(/statistics)에서 실시간으로 추적됩니다.",
+      ],
+      note: "웹훅을 설정하지 않아도 이메일 발송은 정상 작동합니다. 통계 추적만 비활성화됩니다.",
+    },
     localNote: {
       title: "PC 실행 시 참고",
       items: [
@@ -361,6 +374,19 @@ npm run start`,
         "When the invited user opens the link, the invite code and email are pre-filled.",
         "Signup is impossible without an invitation.",
       ],
+    },
+    webhook: {
+      title: "Resend Webhook Setup (Email Statistics)",
+      desc: "To track email delivery stats (delivered, opened, clicked, bounced, etc.), you need to set up a Resend webhook.",
+      steps: [
+        "Go to https://resend.com/webhooks",
+        "Click 'Add Webhook'.",
+        "Enter the URL: https://your-domain/api/webhooks/resend",
+        "Select these events: email.delivered, email.bounced, email.opened, email.clicked, email.failed, email.complained",
+        "Click 'Create' to save.",
+        "After setup, send an email and check the Statistics page (/statistics) for real-time tracking.",
+      ],
+      note: "The webhook is optional — emails will send without it. Only statistics tracking requires it.",
     },
     localNote: {
       title: "Notes for PC usage",
@@ -580,6 +606,23 @@ export default function GuidePage() {
               </li>
             ))}
           </ol>
+        </section>
+
+        {/* Webhook */}
+        <section className="mt-10 bg-surface-card border border-[#e5e7eb] rounded-xl p-5">
+          <h3 className="text-[15px] font-semibold mb-2">{t.webhook.title}</h3>
+          <p className="text-[13px] text-[#6b7280] mb-3">{t.webhook.desc}</p>
+          <ol className="space-y-2 mb-4">
+            {t.webhook.steps.map((step, i) => (
+              <li key={i} className="flex items-start gap-2.5 text-[13px] text-[#374151] leading-relaxed">
+                <span className="flex-shrink-0 w-5 h-5 rounded-full bg-[#FDC700]/15 text-[#b45309] text-[11px] font-semibold flex items-center justify-center mt-0.5">
+                  {i + 1}
+                </span>
+                {step}
+              </li>
+            ))}
+          </ol>
+          <p className="text-[12px] text-[#9ca3af] italic">{t.webhook.note}</p>
         </section>
 
         {/* Release Notes */}
