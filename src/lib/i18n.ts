@@ -108,6 +108,20 @@ const translations = {
 
     // Statistics
     "nav.statistics": "Statistics",
+    "nav.settings": "Settings",
+
+    // Settings
+    "settings.title": "Settings",
+    "settings.description": "Manage your account settings.",
+    "settings.change_password": "Change Password",
+    "settings.current_password": "Current Password",
+    "settings.new_password": "New Password",
+    "settings.confirm_password": "Confirm New Password",
+    "settings.password_placeholder": "8 characters minimum",
+    "settings.save_password": "Update Password",
+    "settings.password_changed": "Password updated successfully",
+    "settings.password_mismatch": "New passwords do not match",
+    "settings.password_too_short": "Password must be at least 8 characters",
     "stats.title": "Email Statistics",
     "stats.description": "Track delivery, opens, clicks, and bounces across all campaigns.",
     "stats.overall": "Overall",
@@ -243,6 +257,20 @@ const translations = {
 
     // Statistics
     "nav.statistics": "통계",
+    "nav.settings": "설정",
+
+    // Settings
+    "settings.title": "설정",
+    "settings.description": "계정 설정을 관리합니다.",
+    "settings.change_password": "비밀번호 변경",
+    "settings.current_password": "현재 비밀번호",
+    "settings.new_password": "새 비밀번호",
+    "settings.confirm_password": "새 비밀번호 확인",
+    "settings.password_placeholder": "8자 이상",
+    "settings.save_password": "비밀번호 변경",
+    "settings.password_changed": "비밀번호가 변경되었습니다",
+    "settings.password_mismatch": "새 비밀번호가 일치하지 않습니다",
+    "settings.password_too_short": "비밀번호는 8자 이상이어야 합니다",
     "stats.title": "이메일 통계",
     "stats.description": "발송, 수신, 오픈, 클릭, 바운스 현황을 확인합니다.",
     "stats.overall": "전체 현황",

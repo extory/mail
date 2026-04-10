@@ -1,6 +1,6 @@
 import { createHmac } from "crypto";
 
-const SECRET = process.env.JWT_SECRET || "mail-service-secret-key-change-in-production";
+const SECRET = process.env.JWT_SECRET || "dev-only-insecure-jwt-secret";
 
 export function generateUnsubscribeToken(email: string): string {
   const hmac = createHmac("sha256", SECRET).update(email).digest("hex");

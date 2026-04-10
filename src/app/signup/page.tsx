@@ -108,7 +108,7 @@ function SignupForm() {
                 placeholder="6 characters minimum"
                 className="w-full border border-[#e5e7eb] rounded-lg px-3 h-[38px] text-[13px] focus:outline-none focus:ring-2 focus:ring-[#155DFC]/20 focus:border-[#155DFC] transition-all placeholder:text-[#9ca3af]"
                 required
-                minLength={6}
+                minLength={8}
               />
             </div>
 

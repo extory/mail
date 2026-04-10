@@ -1,18 +1,34 @@
 import { NextRequest } from "next/server";
 import { recordEmailEvent } from "@/lib/db";
+import { createHmac } from "crypto";
 
-// Resend webhook events
-// Docs: https://resend.com/docs/dashboard/webhooks/introduction
+const WEBHOOK_SECRET = process.env.RESEND_WEBHOOK_SECRET;
+
+function verifyWebhookSignature(payload: string, signature: string | null): boolean {
+  if (!WEBHOOK_SECRET || !signature) return false;
+  const expected = createHmac("sha256", WEBHOOK_SECRET).update(payload).digest("base64");
+  return signature === expected;
+}
+
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
+    const rawBody = await request.text();
+
+    // Verify webhook signature if secret is configured
+    if (WEBHOOK_SECRET) {
+      const signature = request.headers.get("x-resend-signature");
+      if (!verifyWebhookSignature(rawBody, signature)) {
+        return Response.json({ error: "Invalid signature" }, { status: 401 });
+      }
+    }
+
+    const body = JSON.parse(rawBody);
     const { type, data } = body;
 
     if (!type || !data?.email_id) {
       return Response.json({ error: "Invalid payload" }, { status: 400 });
     }
 
-    // Map Resend event types to our event types
     const eventMap: Record<string, string> = {
       "email.sent": "sent",
       "email.delivered": "delivered",
@@ -29,15 +45,10 @@ export async function POST(request: NextRequest) {
       return Response.json({ ok: true, skipped: type });
     }
 
-    // Store extra data for bounces and failures
     let extraData: string | undefined;
-    if (data.bounce) {
-      extraData = JSON.stringify(data.bounce);
-    } else if (data.failed) {
-      extraData = JSON.stringify(data.failed);
-    } else if (data.click) {
-      extraData = JSON.stringify(data.click);
-    }
+    if (data.bounce) extraData = JSON.stringify(data.bounce);
+    else if (data.failed) extraData = JSON.stringify(data.failed);
+    else if (data.click) extraData = JSON.stringify(data.click);
 
     recordEmailEvent(data.email_id, eventType, extraData);
 

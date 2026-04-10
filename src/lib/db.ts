@@ -248,6 +248,16 @@ export function createUser(email: string, passwordHash: string, role: string = "
   return db.prepare("SELECT * FROM users WHERE id = ?").get(result.lastInsertRowid) as DbUser;
 }
 
+export function updateUserPassword(id: number, passwordHash: string): void {
+  const db = getDb();
+  db.prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(passwordHash, id);
+}
+
+export function getUserById(id: number): DbUser | undefined {
+  const db = getDb();
+  return db.prepare("SELECT * FROM users WHERE id = ?").get(id) as DbUser | undefined;
+}
+
 // --- Invitations ---
 
 export interface DbInvitation {

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { jwtVerify } from "jose";
 
 const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || "mail-service-secret-key-change-in-production"
+  process.env.JWT_SECRET || "dev-only-insecure-jwt-secret"
 );
 
 const protectedPaths = [
@@ -14,10 +14,20 @@ const protectedPaths = [
   "/history",
   "/invitations",
   "/statistics",
+  "/settings",
 ];
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
+
+  // CSRF: Block cross-origin state-changing requests to API
+  if (pathname.startsWith("/api/") && request.method !== "GET") {
+    const origin = request.headers.get("origin");
+    const host = request.headers.get("host");
+    if (origin && host && !origin.includes(host)) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+  }
 
   const isProtected = protectedPaths.some(
     (p) => pathname === p || pathname.startsWith(p + "/")
@@ -61,6 +71,7 @@ export const config = {
     "/history/:path*",
     "/invitations/:path*",
     "/statistics/:path*",
+    "/settings/:path*",
     "/api/((?!auth/).*)",
   ],
 };

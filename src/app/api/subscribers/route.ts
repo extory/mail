@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { getSubscribers, addSubscriber, updateSubscriberGroup } from "@/lib/db";
+import { isValidEmail, sanitizeString } from "@/lib/validation";
 
 export async function GET(request: NextRequest) {
   const search = request.nextUrl.searchParams.get("search") || undefined;
@@ -11,10 +12,11 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   const { email, name, groupId } = await request.json();
-  if (!email) {
-    return Response.json({ error: "Email is required" }, { status: 400 });
+  if (!email || !isValidEmail(email)) {
+    return Response.json({ error: "Valid email is required" }, { status: 400 });
   }
-  const subscriber = addSubscriber(email, name, groupId);
+  const safeName = name ? sanitizeString(name, 200) : undefined;
+  const subscriber = addSubscriber(email, safeName, groupId);
   return Response.json(subscriber);
 }
 

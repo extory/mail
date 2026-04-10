@@ -3,14 +3,19 @@ import { hashSync, compareSync } from "bcryptjs";
 import { cookies } from "next/headers";
 import {
   getUserByEmail,
+  getUserById,
   getUserCount,
   createUser,
+  updateUserPassword,
   getInvitationByCode,
   markInvitationUsed,
 } from "./db";
 
+if (!process.env.JWT_SECRET) {
+  console.warn("[SECURITY] JWT_SECRET not set! Set it in .env.local for production.");
+}
 const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || "mail-service-secret-key-change-in-production"
+  process.env.JWT_SECRET || "dev-only-insecure-jwt-secret-" + Math.random()
 );
 const COOKIE_NAME = "mail_session";
 
@@ -85,6 +90,19 @@ export async function getSession() {
 export async function signOut() {
   const cookieStore = await cookies();
   cookieStore.delete(COOKIE_NAME);
+}
+
+export async function changePassword(userId: number, currentPassword: string, newPassword: string) {
+  const user = getUserById(userId);
+  if (!user) {
+    return { error: "User not found" };
+  }
+  if (!compareSync(currentPassword, user.password_hash)) {
+    return { error: "Current password is incorrect" };
+  }
+  const hash = hashSync(newPassword, 10);
+  updateUserPassword(userId, hash);
+  return { success: true };
 }
 
 async function createToken(id: number, email: string, role: string) {
