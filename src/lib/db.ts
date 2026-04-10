@@ -393,3 +393,49 @@ export function getOverallStats(): {
     FROM sent_emails
   `).get() as { total_sent: number; total_delivered: number; total_opened: number; total_clicked: number; total_bounced: number; total_failed: number };
 }
+
+// --- Dashboard ---
+
+export function getDashboardData() {
+  const db = getDb();
+
+  const subscriberCount = (db.prepare("SELECT COUNT(*) as c FROM subscribers WHERE status = 'active'").get() as { c: number }).c;
+  const unsubscribedCount = (db.prepare("SELECT COUNT(*) as c FROM subscribers WHERE status = 'unsubscribed'").get() as { c: number }).c;
+  const groupCount = (db.prepare("SELECT COUNT(*) as c FROM groups").get() as { c: number }).c;
+  const draftCount = (db.prepare("SELECT COUNT(*) as c FROM drafts").get() as { c: number }).c;
+  const campaignCount = (db.prepare("SELECT COUNT(*) as c FROM send_log").get() as { c: number }).c;
+
+  const groups = db.prepare(`
+    SELECT g.name, COUNT(s.id) as count
+    FROM groups g
+    LEFT JOIN subscribers s ON s.group_id = g.id AND s.status = 'active'
+    GROUP BY g.id ORDER BY count DESC LIMIT 5
+  `).all() as { name: string; count: number }[];
+
+  const emailStats = db.prepare(`
+    SELECT
+      COALESCE(COUNT(*), 0) as total_sent,
+      COALESCE(SUM(CASE WHEN last_event IN ('delivered','opened','clicked') THEN 1 ELSE 0 END), 0) as total_delivered,
+      COALESCE(SUM(CASE WHEN last_event IN ('opened','clicked') THEN 1 ELSE 0 END), 0) as total_opened,
+      COALESCE(SUM(CASE WHEN last_event = 'clicked' THEN 1 ELSE 0 END), 0) as total_clicked,
+      COALESCE(SUM(CASE WHEN last_event = 'bounced' THEN 1 ELSE 0 END), 0) as total_bounced,
+      COALESCE(SUM(CASE WHEN last_event = 'failed' THEN 1 ELSE 0 END), 0) as total_failed
+    FROM sent_emails
+  `).get() as { total_sent: number; total_delivered: number; total_opened: number; total_clicked: number; total_bounced: number; total_failed: number };
+
+  const recentCampaigns = db.prepare(`
+    SELECT sl.subject, sl.sent_at, sl.recipient_count, sl.status
+    FROM send_log sl ORDER BY sl.sent_at DESC LIMIT 5
+  `).all() as { subject: string; sent_at: string; recipient_count: number; status: string }[];
+
+  return {
+    subscriberCount,
+    unsubscribedCount,
+    groupCount,
+    draftCount,
+    campaignCount,
+    groups,
+    emailStats,
+    recentCampaigns,
+  };
+}

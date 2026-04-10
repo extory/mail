@@ -31,6 +31,20 @@ const translations = {
     "dashboard.history.title": "History",
     "dashboard.history.desc": "View past emails and their delivery status.",
 
+    // Dashboard stats
+    "dashboard.active_subscribers": "Active Subscribers",
+    "dashboard.unsubscribed": "Unsubscribed",
+    "dashboard.groups_count": "Groups",
+    "dashboard.drafts_count": "Drafts",
+    "dashboard.campaigns_sent": "Campaigns Sent",
+    "dashboard.emails_sent": "Emails Sent",
+    "dashboard.avg_delivery": "Avg. Delivery Rate",
+    "dashboard.avg_open": "Avg. Open Rate",
+    "dashboard.avg_click": "Avg. Click Rate",
+    "dashboard.group_breakdown": "Subscribers by Group",
+    "dashboard.recent_campaigns": "Recent Campaigns",
+    "dashboard.no_campaigns": "No campaigns yet",
+
     // Subscribers
     "subscribers.title": "Subscribers",
     "subscribers.email": "Email",
@@ -179,6 +193,20 @@ const translations = {
     "dashboard.compose.desc": "AI로 이메일 내용을 생성하고 구독자에게 발송합니다.",
     "dashboard.history.title": "발송 이력",
     "dashboard.history.desc": "보낸 이메일과 발송 상태를 확인합니다.",
+
+    // Dashboard stats
+    "dashboard.active_subscribers": "활성 구독자",
+    "dashboard.unsubscribed": "수신거부",
+    "dashboard.groups_count": "그룹",
+    "dashboard.drafts_count": "임시저장",
+    "dashboard.campaigns_sent": "발송 캠페인",
+    "dashboard.emails_sent": "발송 이메일",
+    "dashboard.avg_delivery": "평균 전송률",
+    "dashboard.avg_open": "평균 오픈율",
+    "dashboard.avg_click": "평균 클릭율",
+    "dashboard.group_breakdown": "그룹별 구독자",
+    "dashboard.recent_campaigns": "최근 발송",
+    "dashboard.no_campaigns": "아직 발송 내역이 없습니다",
 
     // Subscribers
     "subscribers.title": "구독자",
