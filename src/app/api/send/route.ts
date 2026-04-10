@@ -41,5 +41,6 @@ export async function POST(request: NextRequest) {
     failed: result.failed,
     total: recipients.length,
     status,
+    error: result.error,
   });
 }

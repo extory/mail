@@ -7,7 +7,9 @@ export default function SubscribersPage() {
   const { t } = useLocale();
   return (
     <div className="max-w-5xl">
-      <h1 className="text-2xl font-bold mb-6">{t("subscribers.title")}</h1>
+      <h1 className="text-[22px] font-semibold text-text-primary tracking-tight mb-6">
+        {t("subscribers.title")}
+      </h1>
       <SubscriberTable />
     </div>
   );

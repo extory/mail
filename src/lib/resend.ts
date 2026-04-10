@@ -14,10 +14,11 @@ export async function sendBulkEmails(
   subject: string,
   htmlContent: string,
   recipients: Recipient[]
-): Promise<{ success: number; failed: number }> {
+): Promise<{ success: number; failed: number; error?: string }> {
   const BATCH_SIZE = 100;
   let success = 0;
   let failed = 0;
+  let lastError: string | undefined;
 
   for (let i = 0; i < recipients.length; i += BATCH_SIZE) {
     const batch = recipients.slice(i, i + BATCH_SIZE);
@@ -31,19 +32,23 @@ export async function sendBulkEmails(
     try {
       const result = await resend.batch.send(emails);
       if (result.error) {
+        console.error("[Resend batch error]", result.error);
+        lastError = result.error.message;
         failed += batch.length;
       } else {
         success += batch.length;
       }
-    } catch {
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error("[Resend exception]", msg);
+      lastError = msg;
       failed += batch.length;
     }
 
-    // Small delay between batches to avoid rate limits
     if (i + BATCH_SIZE < recipients.length) {
       await new Promise((resolve) => setTimeout(resolve, 500));
     }
   }
 
-  return { success, failed };
+  return { success, failed, error: lastError };
 }

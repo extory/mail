@@ -15,6 +15,14 @@ export interface Group {
   subscriber_count: number;
 }
 
+export interface Draft {
+  id: number;
+  subject: string;
+  html_content: string;
+  prompt: string;
+  updated_at: string;
+}
+
 export interface SendLog {
   id: number;
   subject: string;

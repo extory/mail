@@ -32,13 +32,8 @@ export function SubscriberTable() {
     setLoading(false);
   };
 
-  useEffect(() => {
-    fetchGroups();
-  }, []);
-
-  useEffect(() => {
-    fetchSubscribers();
-  }, [search, filterGroupId]);
+  useEffect(() => { fetchGroups(); }, []);
+  useEffect(() => { fetchSubscribers(); }, [search, filterGroupId]);
 
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -66,10 +61,7 @@ export function SubscriberTable() {
     await fetch("/api/subscribers", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        id: subscriberId,
-        groupId: groupId ? Number(groupId) : null,
-      }),
+      body: JSON.stringify({ id: subscriberId, groupId: groupId ? Number(groupId) : null }),
     });
     fetchSubscribers();
   };
@@ -80,10 +72,7 @@ export function SubscriberTable() {
     const formData = new FormData();
     formData.append("file", file);
     if (newGroupId) formData.append("groupId", newGroupId);
-    const res = await fetch("/api/subscribers/import", {
-      method: "POST",
-      body: formData,
-    });
+    const res = await fetch("/api/subscribers/import", { method: "POST", body: formData });
     const result = await res.json();
     setImportResult(t("subscribers.imported", { imported: result.imported, skipped: result.skipped }));
     fetchSubscribers();
@@ -91,93 +80,123 @@ export function SubscriberTable() {
     setTimeout(() => setImportResult(null), 3000);
   };
 
+  const handleDownloadTemplate = () => {
+    const csv = "email,name\nuser@example.com,John Doe\n";
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "subscribers_template.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const inputClass = "border border-border rounded-lg px-3 h-[38px] text-[13px] bg-white focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand transition-all placeholder:text-text-muted";
+  const selectClass = "border border-border rounded-lg px-3 h-[38px] text-[13px] bg-white focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand transition-all";
+
   return (
-    <div className="space-y-6">
-      {/* Add subscriber form */}
-      <form onSubmit={handleAdd} className="flex gap-3 items-end flex-wrap">
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            {t("subscribers.email")}
-          </label>
-          <input
-            type="email"
-            value={newEmail}
-            onChange={(e) => setNewEmail(e.target.value)}
-            placeholder="user@example.com"
-            className="border rounded-lg px-3 py-2 text-sm w-64"
-            required
-          />
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            {t("subscribers.name")}
-          </label>
-          <input
-            type="text"
-            value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-            placeholder={t("subscribers.name.placeholder")}
-            className="border rounded-lg px-3 py-2 text-sm w-40"
-          />
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            {t("subscribers.group")}
-          </label>
-          <select
-            value={newGroupId}
-            onChange={(e) => setNewGroupId(e.target.value)}
-            className="border rounded-lg px-3 py-2 text-sm w-40"
-          >
-            <option value="">-</option>
-            {groups.map((g) => (
-              <option key={g.id} value={g.id}>{g.name}</option>
-            ))}
-          </select>
-        </div>
-        <button
-          type="submit"
-          className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700"
-        >
-          {t("add")}
-        </button>
-        <div className="ml-auto flex items-end gap-2">
-          <input
-            ref={fileRef}
-            type="file"
-            accept=".csv"
-            onChange={handleImport}
-            className="hidden"
-          />
-          <button
-            type="button"
-            onClick={() => fileRef.current?.click()}
-            className="bg-gray-100 text-gray-700 px-4 py-2 rounded-lg text-sm hover:bg-gray-200 border"
-          >
-            {t("subscribers.import")}
-          </button>
-        </div>
-      </form>
+    <div className="space-y-4">
+      {/* Add subscriber */}
+      <div className="bg-surface-card border border-border rounded-xl p-5">
+        <form onSubmit={handleAdd} className="space-y-4">
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="block text-[12px] font-medium text-text-secondary mb-1.5">
+                {t("subscribers.email")}
+              </label>
+              <input
+                type="email"
+                value={newEmail}
+                onChange={(e) => setNewEmail(e.target.value)}
+                placeholder="user@example.com"
+                className={`${inputClass} w-full`}
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-[12px] font-medium text-text-secondary mb-1.5">
+                {t("subscribers.name")}
+              </label>
+              <input
+                type="text"
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                placeholder={t("subscribers.name.placeholder")}
+                className={`${inputClass} w-full`}
+              />
+            </div>
+            <div>
+              <label className="block text-[12px] font-medium text-text-secondary mb-1.5">
+                {t("subscribers.group")}
+              </label>
+              <select
+                value={newGroupId}
+                onChange={(e) => setNewGroupId(e.target.value)}
+                className={`${selectClass} w-full`}
+              >
+                <option value="">-</option>
+                {groups.map((g) => (
+                  <option key={g.id} value={g.id}>{g.name}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="submit"
+              className="bg-brand text-white px-5 py-2 rounded-lg text-[13px] font-medium hover:bg-brand-dark transition-colors"
+            >
+              {t("add")}
+            </button>
+            <div className="h-5 w-px bg-border mx-1" />
+            <input ref={fileRef} type="file" accept=".csv" onChange={handleImport} className="hidden" />
+            <button
+              type="button"
+              onClick={() => fileRef.current?.click()}
+              className="border border-border text-text-secondary px-4 py-2 rounded-lg text-[13px] font-medium hover:bg-surface hover:text-text-primary transition-colors"
+            >
+              {t("subscribers.import")}
+            </button>
+            <button
+              type="button"
+              onClick={handleDownloadTemplate}
+              className="text-text-muted hover:text-brand text-[12px] font-medium transition-colors flex items-center gap-1"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="7 10 12 15 17 10" />
+                <line x1="12" y1="15" x2="12" y2="3" />
+              </svg>
+              {t("subscribers.download_template")}
+            </button>
+          </div>
+        </form>
+      </div>
 
       {importResult && (
-        <div className="bg-green-50 text-green-700 px-4 py-2 rounded-lg text-sm">
+        <div className="bg-success/10 text-success px-4 py-2.5 rounded-lg text-[13px] font-medium">
           {importResult}
         </div>
       )}
 
       {/* Search + Filter */}
       <div className="flex gap-3">
-        <input
-          type="text"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder={t("subscribers.search")}
-          className="border rounded-lg px-3 py-2 text-sm w-full max-w-sm"
-        />
+        <div className="relative flex-1 max-w-xs">
+          <svg className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" />
+          </svg>
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder={t("subscribers.search")}
+            className={`${inputClass} w-full pl-9`}
+          />
+        </div>
         <select
           value={filterGroupId}
           onChange={(e) => setFilterGroupId(e.target.value)}
-          className="border rounded-lg px-3 py-2 text-sm"
+          className={selectClass}
         >
           <option value="">{t("subscribers.all_groups")}</option>
           <option value="0">{t("subscribers.no_group")}</option>
@@ -188,36 +207,36 @@ export function SubscriberTable() {
       </div>
 
       {/* Table */}
-      <div className="border rounded-lg overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50 border-b">
-            <tr>
-              <th className="text-left px-4 py-3 font-medium text-gray-600">{t("subscribers.email")}</th>
-              <th className="text-left px-4 py-3 font-medium text-gray-600">{t("subscribers.name")}</th>
-              <th className="text-left px-4 py-3 font-medium text-gray-600">{t("subscribers.group")}</th>
-              <th className="text-left px-4 py-3 font-medium text-gray-600">{t("subscribers.added")}</th>
-              <th className="text-right px-4 py-3 font-medium text-gray-600">{t("actions")}</th>
+      <div className="bg-surface-card border border-border rounded-xl overflow-hidden">
+        <table className="w-full text-[13px]">
+          <thead>
+            <tr className="border-b border-border-light bg-surface">
+              <th className="text-left px-5 py-3 font-medium text-text-secondary text-[12px]">{t("subscribers.email")}</th>
+              <th className="text-left px-5 py-3 font-medium text-text-secondary text-[12px]">{t("subscribers.name")}</th>
+              <th className="text-left px-5 py-3 font-medium text-text-secondary text-[12px]">{t("subscribers.group")}</th>
+              <th className="text-left px-5 py-3 font-medium text-text-secondary text-[12px]">{t("subscribers.added")}</th>
+              <th className="text-right px-5 py-3 font-medium text-text-secondary text-[12px]">{t("actions")}</th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={5} className="text-center py-8 text-gray-500">{t("loading")}</td>
+                <td colSpan={5} className="text-center py-12 text-text-muted text-[13px]">{t("loading")}</td>
               </tr>
             ) : subscribers.length === 0 ? (
               <tr>
-                <td colSpan={5} className="text-center py-8 text-gray-500">{t("subscribers.no_subscribers")}</td>
+                <td colSpan={5} className="text-center py-12 text-text-muted text-[13px]">{t("subscribers.no_subscribers")}</td>
               </tr>
             ) : (
               subscribers.map((sub) => (
-                <tr key={sub.id} className="border-b last:border-0">
-                  <td className="px-4 py-3">{sub.email}</td>
-                  <td className="px-4 py-3 text-gray-600">{sub.name || "-"}</td>
-                  <td className="px-4 py-3">
+                <tr key={sub.id} className="border-b border-border-light last:border-0 hover:bg-surface/50 transition-colors">
+                  <td className="px-5 py-3 text-text-primary">{sub.email}</td>
+                  <td className="px-5 py-3 text-text-secondary">{sub.name || "-"}</td>
+                  <td className="px-5 py-3">
                     <select
                       value={sub.group_id ?? ""}
                       onChange={(e) => handleGroupChange(sub.id, e.target.value)}
-                      className="border rounded px-2 py-1 text-xs"
+                      className="border border-border rounded-md px-2 py-1 text-[12px] bg-white focus:outline-none focus:ring-1 focus:ring-brand/20"
                     >
                       <option value="">-</option>
                       {groups.map((g) => (
@@ -225,13 +244,13 @@ export function SubscriberTable() {
                       ))}
                     </select>
                   </td>
-                  <td className="px-4 py-3 text-gray-500">
+                  <td className="px-5 py-3 text-text-muted">
                     {new Date(sub.created_at).toLocaleDateString()}
                   </td>
-                  <td className="px-4 py-3 text-right">
+                  <td className="px-5 py-3 text-right">
                     <button
                       onClick={() => handleRemove(sub.id)}
-                      className="text-red-600 hover:text-red-800 text-sm"
+                      className="text-danger hover:text-danger/80 text-[12px] font-medium transition-colors"
                     >
                       {t("remove")}
                     </button>
@@ -243,7 +262,7 @@ export function SubscriberTable() {
         </table>
       </div>
 
-      <p className="text-sm text-gray-500">
+      <p className="text-[12px] text-text-muted">
         {t("subscribers.count", { count: subscribers.length })}
       </p>
     </div>

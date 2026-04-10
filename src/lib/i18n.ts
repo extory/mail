@@ -45,6 +45,7 @@ const translations = {
     "subscribers.imported": "Imported: {imported}, Skipped: {skipped}",
     "subscribers.all_groups": "All Groups",
     "subscribers.no_group": "No Group",
+    "subscribers.download_template": "CSV Template",
 
     // Groups
     "groups.title": "Groups",
@@ -77,6 +78,19 @@ const translations = {
     "compose.sent_failed": ", {failed} failed",
     "compose.error_generate": "Error generating email",
     "compose.error_send": "Error sending emails",
+
+    // Drafts
+    "nav.drafts": "Drafts",
+    "drafts.title": "Drafts",
+    "drafts.description": "Saved email drafts. Click to edit and send.",
+    "drafts.no_drafts": "No drafts yet",
+    "drafts.save": "Save Draft",
+    "drafts.saved": "Draft saved",
+    "drafts.delete_confirm": "Delete this draft?",
+    "drafts.updated": "Updated",
+    "drafts.no_subject": "(No subject)",
+    "dashboard.drafts.title": "Drafts",
+    "dashboard.drafts.desc": "View and edit saved email drafts.",
 
     // History
     "history.title": "Send History",
@@ -132,6 +146,7 @@ const translations = {
     "subscribers.imported": "가져오기: {imported}명, 건너뜀: {skipped}명",
     "subscribers.all_groups": "전체 그룹",
     "subscribers.no_group": "그룹 없음",
+    "subscribers.download_template": "CSV 양식 다운로드",
 
     // Groups
     "groups.title": "그룹",
@@ -164,6 +179,19 @@ const translations = {
     "compose.sent_failed": ", {failed}명 실패",
     "compose.error_generate": "이메일 생성 중 오류가 발생했습니다",
     "compose.error_send": "이메일 발송 중 오류가 발생했습니다",
+
+    // Drafts
+    "nav.drafts": "임시저장",
+    "drafts.title": "임시저장",
+    "drafts.description": "저장된 이메일 초안입니다. 클릭하면 수정 및 발송할 수 있습니다.",
+    "drafts.no_drafts": "임시저장된 이메일이 없습니다",
+    "drafts.save": "임시저장",
+    "drafts.saved": "저장되었습니다",
+    "drafts.delete_confirm": "이 초안을 삭제하시겠습니까?",
+    "drafts.updated": "수정일",
+    "drafts.no_subject": "(제목 없음)",
+    "dashboard.drafts.title": "임시저장",
+    "dashboard.drafts.desc": "저장된 이메일 초안을 확인하고 수정합니다.",
 
     // History
     "history.title": "발송 이력",

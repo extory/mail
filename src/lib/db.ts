@@ -1,6 +1,6 @@
 import Database from "better-sqlite3";
 import path from "path";
-import type { Subscriber, SendLog, Group } from "./types";
+import type { Subscriber, SendLog, Group, Draft } from "./types";
 
 const DB_PATH = path.join(process.cwd(), "data", "mail.db");
 
@@ -24,6 +24,13 @@ function getDb(): Database.Database {
         created_at TEXT DEFAULT (datetime('now')),
         status TEXT DEFAULT 'active',
         FOREIGN KEY (group_id) REFERENCES groups(id) ON DELETE SET NULL
+      );
+      CREATE TABLE IF NOT EXISTS drafts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        subject TEXT NOT NULL DEFAULT '',
+        html_content TEXT NOT NULL DEFAULT '',
+        prompt TEXT NOT NULL DEFAULT '',
+        updated_at TEXT DEFAULT (datetime('now'))
       );
       CREATE TABLE IF NOT EXISTS send_log (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -143,6 +150,34 @@ export function importSubscribers(
     return { imported, skipped };
   });
   return transaction();
+}
+
+// --- Drafts ---
+
+export function getDrafts(): Draft[] {
+  const db = getDb();
+  return db.prepare("SELECT * FROM drafts ORDER BY updated_at DESC").all() as Draft[];
+}
+
+export function getDraft(id: number): Draft | undefined {
+  const db = getDb();
+  return db.prepare("SELECT * FROM drafts WHERE id = ?").get(id) as Draft | undefined;
+}
+
+export function saveDraft(subject: string, htmlContent: string, prompt: string, id?: number): Draft {
+  const db = getDb();
+  if (id) {
+    db.prepare("UPDATE drafts SET subject = ?, html_content = ?, prompt = ?, updated_at = datetime('now') WHERE id = ?")
+      .run(subject, htmlContent, prompt, id);
+    return db.prepare("SELECT * FROM drafts WHERE id = ?").get(id) as Draft;
+  }
+  const result = db.prepare("INSERT INTO drafts (subject, html_content, prompt) VALUES (?, ?, ?)").run(subject, htmlContent, prompt);
+  return db.prepare("SELECT * FROM drafts WHERE id = ?").get(result.lastInsertRowid) as Draft;
+}
+
+export function deleteDraft(id: number): void {
+  const db = getDb();
+  db.prepare("DELETE FROM drafts WHERE id = ?").run(id);
 }
 
 // --- Send Log ---

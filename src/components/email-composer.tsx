@@ -1,25 +1,46 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
 import type { Group } from "@/lib/types";
 import { useLocale } from "./locale-provider";
 
 export function EmailComposer() {
   const { t } = useLocale();
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const [draftId, setDraftId] = useState<number | null>(null);
   const [prompt, setPrompt] = useState("");
   const [subject, setSubject] = useState("");
   const [htmlContent, setHtmlContent] = useState("");
   const [generating, setGenerating] = useState(false);
   const [sending, setSending] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [sendResult, setSendResult] = useState<string | null>(null);
+  const [saveResult, setSaveResult] = useState<string | null>(null);
   const [showHtml, setShowHtml] = useState(false);
   const [groups, setGroups] = useState<Group[]>([]);
   const [selectedGroupId, setSelectedGroupId] = useState<string>("");
 
+  // Load draft if draftId in URL
   useEffect(() => {
-    fetch("/api/groups")
-      .then((res) => res.json())
-      .then(setGroups);
+    const id = searchParams.get("draft");
+    if (id) {
+      fetch(`/api/drafts/${id}`)
+        .then((res) => res.json())
+        .then((draft) => {
+          if (!draft.error) {
+            setDraftId(draft.id);
+            setPrompt(draft.prompt || "");
+            setSubject(draft.subject || "");
+            setHtmlContent(draft.html_content || "");
+          }
+        });
+    }
+  }, [searchParams]);
+
+  useEffect(() => {
+    fetch("/api/groups").then((res) => res.json()).then(setGroups);
   }, []);
 
   const handleGenerate = useCallback(async () => {
@@ -28,6 +49,7 @@ export function EmailComposer() {
     setHtmlContent("");
     setSubject("");
     setSendResult(null);
+    setSaveResult(null);
 
     try {
       const res = await fetch("/api/compose", {
@@ -77,6 +99,35 @@ export function EmailComposer() {
     }
   }, [prompt, t]);
 
+  const handleSave = async () => {
+    setSaving(true);
+    setSaveResult(null);
+    try {
+      const res = await fetch("/api/drafts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          subject,
+          htmlContent,
+          prompt,
+          id: draftId || undefined,
+        }),
+      });
+      const draft = await res.json();
+      setDraftId(draft.id);
+      setSaveResult(t("drafts.saved"));
+      // Update URL without reload
+      const url = new URL(window.location.href);
+      url.searchParams.set("draft", String(draft.id));
+      router.replace(url.pathname + url.search);
+      setTimeout(() => setSaveResult(null), 2000);
+    } catch {
+      setSaveResult("Error saving draft");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleSend = async () => {
     if (!subject || !htmlContent) return;
     setSending(true);
@@ -111,40 +162,75 @@ export function EmailComposer() {
     }
   };
 
+  const inputClass = "border border-border rounded-lg px-3 h-[38px] text-[13px] bg-white focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand transition-all placeholder:text-text-muted";
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       {/* Prompt input */}
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2">
+      <div className="bg-surface-card border border-border rounded-xl p-5">
+        <label className="block text-[12px] font-medium text-text-secondary mb-2">
           {t("compose.prompt_label")}
         </label>
         <textarea
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
           placeholder={t("compose.prompt_placeholder")}
-          className="w-full border rounded-lg px-4 py-3 text-sm min-h-[120px] resize-y"
+          className="border border-border rounded-lg px-3 py-2.5 text-[13px] bg-white w-full min-h-[120px] resize-y focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand transition-all placeholder:text-text-muted"
           disabled={generating}
         />
-        <button
-          onClick={handleGenerate}
-          disabled={generating || !prompt.trim()}
-          className="mt-3 bg-blue-600 text-white px-6 py-2 rounded-lg text-sm hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {generating ? t("compose.generating") : t("compose.generate")}
-        </button>
+        <div className="mt-3 flex items-center gap-2">
+          <button
+            onClick={handleGenerate}
+            disabled={generating || !prompt.trim()}
+            className="bg-gradient-to-r from-brand-light to-accent text-white px-6 py-2.5 rounded-lg text-[13px] font-medium hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+          >
+            {generating ? (
+              <span className="flex items-center gap-2">
+                <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+                {t("compose.generating")}
+              </span>
+            ) : (
+              t("compose.generate")
+            )}
+          </button>
+          {/* Save draft button - always visible when there's content */}
+          {(prompt || subject || htmlContent) && (
+            <>
+              <div className="h-5 w-px bg-border" />
+              <button
+                onClick={handleSave}
+                disabled={saving}
+                className="border border-border text-text-secondary px-4 py-2.5 rounded-lg text-[13px] font-medium hover:bg-surface hover:text-text-primary disabled:opacity-40 transition-colors flex items-center gap-1.5"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+                  <polyline points="17 21 17 13 7 13 7 21" />
+                  <polyline points="7 3 7 8 15 8" />
+                </svg>
+                {saving ? "..." : t("drafts.save")}
+              </button>
+              {saveResult && (
+                <span className="text-[12px] text-success font-medium">{saveResult}</span>
+              )}
+            </>
+          )}
+        </div>
       </div>
 
       {/* Subject line */}
       {(subject || htmlContent) && (
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
+        <div className="bg-surface-card border border-border rounded-xl p-5">
+          <label className="block text-[12px] font-medium text-text-secondary mb-1.5">
             {t("compose.subject")}
           </label>
           <input
             type="text"
             value={subject}
             onChange={(e) => setSubject(e.target.value)}
-            className="w-full border rounded-lg px-3 py-2 text-sm"
+            className={`${inputClass} w-full`}
             placeholder={t("compose.subject_placeholder")}
           />
         </div>
@@ -152,12 +238,12 @@ export function EmailComposer() {
 
       {/* Preview */}
       {htmlContent && (
-        <div>
-          <div className="flex items-center justify-between mb-2">
-            <h3 className="text-sm font-medium text-gray-700">{t("compose.preview")}</h3>
+        <div className="bg-surface-card border border-border rounded-xl overflow-hidden">
+          <div className="flex items-center justify-between px-5 py-3 border-b border-border-light bg-surface">
+            <h3 className="text-[12px] font-medium text-text-secondary">{t("compose.preview")}</h3>
             <button
               onClick={() => setShowHtml(!showHtml)}
-              className="text-sm text-gray-500 hover:text-gray-700"
+              className="text-[12px] text-text-muted hover:text-brand font-medium transition-colors"
             >
               {showHtml ? t("compose.visual_preview") : t("compose.view_html")}
             </button>
@@ -167,54 +253,52 @@ export function EmailComposer() {
             <textarea
               value={htmlContent}
               onChange={(e) => setHtmlContent(e.target.value)}
-              className="w-full border rounded-lg px-4 py-3 text-xs font-mono min-h-[400px] resize-y bg-gray-50"
+              className="w-full px-5 py-4 text-[12px] font-mono min-h-[400px] resize-y bg-white border-0 focus:outline-none text-text-primary"
             />
           ) : (
-            <div className="border rounded-lg overflow-hidden bg-white">
-              <iframe
-                srcDoc={htmlContent}
-                sandbox=""
-                className="w-full min-h-[500px] border-0"
-                title="Email Preview"
-              />
-            </div>
+            <iframe
+              srcDoc={htmlContent}
+              sandbox=""
+              className="w-full min-h-[500px] border-0 bg-white"
+              title="Email Preview"
+            />
           )}
         </div>
       )}
 
       {/* Send controls */}
       {htmlContent && !generating && (
-        <div className="flex items-center gap-4 pt-4 border-t flex-wrap">
-          <select
-            value={selectedGroupId}
-            onChange={(e) => setSelectedGroupId(e.target.value)}
-            className="border rounded-lg px-3 py-2 text-sm"
-          >
-            <option value="">{t("compose.all_subscribers")}</option>
-            {groups.map((g) => (
-              <option key={g.id} value={g.id}>
-                {g.name} ({g.subscriber_count})
-              </option>
-            ))}
-          </select>
-          <button
-            onClick={handleSend}
-            disabled={sending || !subject}
-            className="bg-green-600 text-white px-6 py-2 rounded-lg text-sm hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {sending
-              ? t("compose.sending")
-              : selectedGroupId
-                ? t("compose.send_group")
-                : t("compose.send_all")}
-          </button>
-          {sendResult && (
-            <p
-              className={`text-sm ${sendResult.startsWith("Error") ? "text-red-600" : "text-green-600"}`}
+        <div className="bg-surface-card border border-border rounded-xl p-5">
+          <div className="flex items-center gap-3 flex-wrap">
+            <select
+              value={selectedGroupId}
+              onChange={(e) => setSelectedGroupId(e.target.value)}
+              className="border border-border rounded-lg px-3 h-[38px] text-[13px] bg-white focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand transition-all"
             >
-              {sendResult}
-            </p>
-          )}
+              <option value="">{t("compose.all_subscribers")}</option>
+              {groups.map((g) => (
+                <option key={g.id} value={g.id}>
+                  {g.name} ({g.subscriber_count})
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={handleSend}
+              disabled={sending || !subject}
+              className="bg-brand text-white px-6 py-2.5 rounded-lg text-[13px] font-medium hover:bg-brand-dark disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              {sending
+                ? t("compose.sending")
+                : selectedGroupId
+                  ? t("compose.send_group")
+                  : t("compose.send_all")}
+            </button>
+            {sendResult && (
+              <p className={`text-[13px] font-medium ${sendResult.startsWith("Error") ? "text-danger" : "text-success"}`}>
+                {sendResult}
+              </p>
+            )}
+          </div>
         </div>
       )}
     </div>
