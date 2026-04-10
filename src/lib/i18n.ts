@@ -106,6 +106,26 @@ const translations = {
     "invitations.copied": "Copied!",
     "invitations.delete_confirm": "Delete this invitation?",
 
+    // Statistics
+    "nav.statistics": "Statistics",
+    "stats.title": "Email Statistics",
+    "stats.description": "Track delivery, opens, clicks, and bounces across all campaigns.",
+    "stats.overall": "Overall",
+    "stats.campaigns": "By Campaign",
+    "stats.total_sent": "Total Sent",
+    "stats.delivered": "Delivered",
+    "stats.opened": "Opened",
+    "stats.clicked": "Clicked",
+    "stats.bounced": "Bounced",
+    "stats.failed": "Failed",
+    "stats.complained": "Spam",
+    "stats.delivery_rate": "Delivery Rate",
+    "stats.open_rate": "Open Rate",
+    "stats.click_rate": "Click Rate",
+    "stats.bounce_rate": "Bounce Rate",
+    "stats.no_data": "No email data yet. Statistics will appear after sending emails.",
+    "stats.webhook_note": "Set up Resend webhook to {url} for real-time tracking.",
+
     // History
     "history.title": "Send History",
     "history.date": "Date",
@@ -220,6 +240,26 @@ const translations = {
     "invitations.copy": "링크 복사",
     "invitations.copied": "복사됨!",
     "invitations.delete_confirm": "이 초대를 삭제하시겠습니까?",
+
+    // Statistics
+    "nav.statistics": "통계",
+    "stats.title": "이메일 통계",
+    "stats.description": "발송, 수신, 오픈, 클릭, 바운스 현황을 확인합니다.",
+    "stats.overall": "전체 현황",
+    "stats.campaigns": "캠페인별",
+    "stats.total_sent": "총 발송",
+    "stats.delivered": "전송 성공",
+    "stats.opened": "오픈",
+    "stats.clicked": "클릭",
+    "stats.bounced": "바운스",
+    "stats.failed": "실패",
+    "stats.complained": "스팸 신고",
+    "stats.delivery_rate": "전송 성공률",
+    "stats.open_rate": "오픈율",
+    "stats.click_rate": "클릭율",
+    "stats.bounce_rate": "바운스율",
+    "stats.no_data": "아직 데이터가 없습니다. 이메일을 발송하면 통계가 표시됩니다.",
+    "stats.webhook_note": "실시간 추적을 위해 Resend 웹훅을 {url} 로 설정하세요.",
 
     // History
     "history.title": "발송 이력",

@@ -57,6 +57,25 @@ function getDb(): Database.Database {
         status TEXT DEFAULT 'sent',
         prompt TEXT
       );
+      CREATE TABLE IF NOT EXISTS sent_emails (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        send_log_id INTEGER NOT NULL,
+        resend_id TEXT UNIQUE NOT NULL,
+        recipient_email TEXT NOT NULL,
+        last_event TEXT DEFAULT 'sent',
+        created_at TEXT DEFAULT (datetime('now')),
+        FOREIGN KEY (send_log_id) REFERENCES send_log(id)
+      );
+      CREATE TABLE IF NOT EXISTS email_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        resend_id TEXT NOT NULL,
+        event_type TEXT NOT NULL,
+        data TEXT,
+        created_at TEXT DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_sent_emails_send_log ON sent_emails(send_log_id);
+      CREATE INDEX IF NOT EXISTS idx_sent_emails_resend_id ON sent_emails(resend_id);
+      CREATE INDEX IF NOT EXISTS idx_email_events_resend_id ON email_events(resend_id);
     `);
   }
   return db;
@@ -291,4 +310,76 @@ export function getSendLogs(): SendLog[] {
   return db
     .prepare("SELECT * FROM send_log ORDER BY sent_at DESC")
     .all() as SendLog[];
+}
+
+// --- Sent Emails & Events ---
+
+export function saveSentEmail(sendLogId: number, resendId: string, recipientEmail: string): void {
+  const db = getDb();
+  db.prepare("INSERT OR IGNORE INTO sent_emails (send_log_id, resend_id, recipient_email) VALUES (?, ?, ?)")
+    .run(sendLogId, resendId, recipientEmail);
+}
+
+export function recordEmailEvent(resendId: string, eventType: string, data?: string): void {
+  const db = getDb();
+  db.prepare("INSERT INTO email_events (resend_id, event_type, data) VALUES (?, ?, ?)").run(resendId, eventType, data || null);
+  // Update last_event on sent_emails
+  db.prepare("UPDATE sent_emails SET last_event = ? WHERE resend_id = ?").run(eventType, resendId);
+}
+
+export interface SendLogStats {
+  send_log_id: number;
+  subject: string;
+  sent_at: string;
+  recipient_count: number;
+  sent: number;
+  delivered: number;
+  opened: number;
+  clicked: number;
+  bounced: number;
+  complained: number;
+  failed: number;
+}
+
+export function getSendLogStats(): SendLogStats[] {
+  const db = getDb();
+  return db.prepare(`
+    SELECT
+      sl.id as send_log_id,
+      sl.subject,
+      sl.sent_at,
+      sl.recipient_count,
+      COALESCE(COUNT(se.id), 0) as sent,
+      COALESCE(SUM(CASE WHEN se.last_event = 'delivered' THEN 1 ELSE 0 END), 0) as delivered,
+      COALESCE(SUM(CASE WHEN se.last_event = 'opened' THEN 1 ELSE 0 END), 0) as opened,
+      COALESCE(SUM(CASE WHEN se.last_event = 'clicked' THEN 1 ELSE 0 END), 0) as clicked,
+      COALESCE(SUM(CASE WHEN se.last_event = 'bounced' THEN 1 ELSE 0 END), 0) as bounced,
+      COALESCE(SUM(CASE WHEN se.last_event = 'complained' THEN 1 ELSE 0 END), 0) as complained,
+      COALESCE(SUM(CASE WHEN se.last_event = 'failed' THEN 1 ELSE 0 END), 0) as failed
+    FROM send_log sl
+    LEFT JOIN sent_emails se ON se.send_log_id = sl.id
+    GROUP BY sl.id
+    ORDER BY sl.sent_at DESC
+  `).all() as SendLogStats[];
+}
+
+export function getOverallStats(): {
+  total_sent: number;
+  total_delivered: number;
+  total_opened: number;
+  total_clicked: number;
+  total_bounced: number;
+  total_failed: number;
+} {
+  const db = getDb();
+  return db.prepare(`
+    SELECT
+      COUNT(*) as total_sent,
+      SUM(CASE WHEN last_event = 'delivered' THEN 1 ELSE 0 END) as total_delivered,
+      SUM(CASE WHEN last_event = 'opened' THEN 1 ELSE 0 END) as total_opened,
+      SUM(CASE WHEN last_event = 'clicked' THEN 1 ELSE 0 END) as total_clicked,
+      SUM(CASE WHEN last_event = 'bounced' THEN 1 ELSE 0 END) as total_bounced,
+      SUM(CASE WHEN last_event = 'failed' THEN 1 ELSE 0 END) as total_failed
+    FROM sent_emails
+  `).get() as { total_sent: number; total_delivered: number; total_opened: number; total_clicked: number; total_bounced: number; total_failed: number };
 }

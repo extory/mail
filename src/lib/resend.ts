@@ -1,5 +1,6 @@
 import { Resend } from "resend";
 import { buildUnsubscribeUrl, wrapHtmlWithUnsubscribeFooter } from "./unsubscribe";
+import { saveSentEmail } from "./db";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -15,7 +16,8 @@ interface Recipient {
 export async function sendBulkEmails(
   subject: string,
   htmlContent: string,
-  recipients: Recipient[]
+  recipients: Recipient[],
+  sendLogId: number
 ): Promise<{ success: number; failed: number; error?: string }> {
   const BATCH_SIZE = 100;
   let success = 0;
@@ -45,8 +47,16 @@ export async function sendBulkEmails(
         console.error("[Resend batch error]", result.error);
         lastError = result.error.message;
         failed += batch.length;
-      } else {
+      } else if (result.data) {
         success += batch.length;
+        // Save each email ID for tracking
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const dataArr = (result.data as any).data ?? result.data;
+        for (let j = 0; j < dataArr.length; j++) {
+          if (dataArr[j]?.id) {
+            saveSentEmail(sendLogId, dataArr[j].id, batch[j].email);
+          }
+        }
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);

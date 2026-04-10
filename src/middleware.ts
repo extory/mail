@@ -13,6 +13,7 @@ const protectedPaths = [
   "/compose",
   "/history",
   "/invitations",
+  "/statistics",
 ];
 
 export async function middleware(request: NextRequest) {
@@ -24,7 +25,8 @@ export async function middleware(request: NextRequest) {
 
   const isProtectedApi = pathname.startsWith("/api/") &&
     !pathname.startsWith("/api/auth/") &&
-    !pathname.startsWith("/api/unsubscribe");
+    !pathname.startsWith("/api/unsubscribe") &&
+    !pathname.startsWith("/api/webhooks/");
 
   if (!isProtected && !isProtectedApi) {
     return NextResponse.next();
@@ -58,6 +60,7 @@ export const config = {
     "/compose/:path*",
     "/history/:path*",
     "/invitations/:path*",
+    "/statistics/:path*",
     "/api/((?!auth/).*)",
   ],
 };

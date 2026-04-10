@@ -25,8 +25,12 @@ export async function POST(request: NextRequest) {
     name: s.name,
   }));
 
-  const result = await sendBulkEmails(subject, htmlContent, recipients);
+  // Create send log first to get the ID
+  const sendLog = addSendLog(subject, htmlContent, recipients.length, "sending", prompt);
 
+  const result = await sendBulkEmails(subject, htmlContent, recipients, sendLog.id);
+
+  // Update send log status
   const status =
     result.failed === 0
       ? "sent"
@@ -34,7 +38,13 @@ export async function POST(request: NextRequest) {
         ? "failed"
         : "partial";
 
-  addSendLog(subject, htmlContent, result.success, status, prompt);
+  // Update the status in DB
+  const Database = await import("better-sqlite3");
+  const path = await import("path");
+  const db = new Database.default(path.join(process.cwd(), "data", "mail.db"));
+  db.prepare("UPDATE send_log SET status = ?, recipient_count = ? WHERE id = ?")
+    .run(status, result.success, sendLog.id);
+  db.close();
 
   return Response.json({
     success: result.success,
