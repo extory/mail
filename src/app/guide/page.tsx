@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import Link from "next/link";
 
 type Lang = "ko" | "en";
@@ -157,6 +157,16 @@ npm run start`,
     changelog: {
       title: "릴리즈 노트",
       releases: [
+        {
+          version: "v1.5.0",
+          date: "2026-04-11",
+          items: [
+            "이메일 발송 통계 대시보드 추가",
+            "Resend 웹훅 연동 (전송, 수신, 오픈, 클릭, 바운스, 실패 추적)",
+            "전체 현황 카드 + 비율 게이지 바 + 캠페인별 상세 테이블",
+            "발송 시 개별 이메일 ID 저장으로 정확한 추적 가능",
+          ],
+        },
         {
           version: "v1.4.0",
           date: "2026-04-11",
@@ -366,6 +376,16 @@ npm run start`,
       title: "Release Notes",
       releases: [
         {
+          version: "v1.5.0",
+          date: "2026-04-11",
+          items: [
+            "Email delivery statistics dashboard",
+            "Resend webhook integration (delivered, opened, clicked, bounced, failed)",
+            "Overall stats cards + rate bars + per-campaign breakdown table",
+            "Individual email ID tracking for accurate delivery stats",
+          ],
+        },
+        {
           version: "v1.4.0",
           date: "2026-04-11",
           items: [
@@ -428,6 +448,8 @@ npm run start`,
 export default function GuidePage() {
   const [lang, setLang] = useState<Lang>("ko");
   const [mode, setMode] = useState<Mode>("server");
+  const [showAllReleases, setShowAllReleases] = useState(false);
+  const changelogRef = useRef<HTMLDivElement>(null);
   const t = content[lang];
   const req = t.requirements[mode];
   const steps = t.steps[mode];
@@ -561,10 +583,10 @@ export default function GuidePage() {
         </section>
 
         {/* Release Notes */}
-        <section className="mt-12 pt-10 border-t border-[#f3f4f6]">
+        <section className="mt-12 pt-10 border-t border-[#f3f4f6]" ref={changelogRef}>
           <h2 className="text-[18px] font-semibold mb-6">{t.changelog.title}</h2>
-          <div className="space-y-8">
-            {t.changelog.releases.map((release, i) => (
+          <div className={`space-y-8 ${showAllReleases ? "max-h-[600px] overflow-y-auto pr-2" : ""}`}>
+            {(showAllReleases ? t.changelog.releases : t.changelog.releases.slice(0, 1)).map((release, i) => (
               <div key={i}>
                 <div className="flex items-center gap-3 mb-3">
                   <span className="text-[14px] font-semibold text-[#111827]">{release.version}</span>
@@ -588,6 +610,29 @@ export default function GuidePage() {
               </div>
             ))}
           </div>
+          {t.changelog.releases.length > 1 && (
+            <button
+              onClick={() => {
+                setShowAllReleases(!showAllReleases);
+                if (!showAllReleases) {
+                  setTimeout(() => changelogRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+                }
+              }}
+              className="mt-4 text-[13px] text-[#155DFC] hover:text-[#0f4ad4] font-medium flex items-center gap-1 transition-colors"
+            >
+              {showAllReleases ? (
+                <>
+                  {lang === "ko" ? "접기" : "Show less"}
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="18 15 12 9 6 15" /></svg>
+                </>
+              ) : (
+                <>
+                  {lang === "ko" ? `이전 버전 보기 (${t.changelog.releases.length - 1}개)` : `Show older versions (${t.changelog.releases.length - 1})`}
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg>
+                </>
+              )}
+            </button>
+          )}
         </section>
       </div>
     </div>
