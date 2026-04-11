@@ -28,7 +28,12 @@ export async function sendBulkEmails(
     const batch = recipients.slice(i, i + BATCH_SIZE);
     const emails = batch.map((r) => {
       const unsubUrl = buildUnsubscribeUrl(BASE_URL, r.email);
-      const html = wrapHtmlWithUnsubscribeFooter(htmlContent, unsubUrl);
+      // Replace {{name}} with actual subscriber name
+      const personalizedContent = htmlContent.replace(
+        /\{\{name\}\}/g,
+        r.name || "Subscriber"
+      );
+      const html = wrapHtmlWithUnsubscribeFooter(personalizedContent, unsubUrl);
       return {
         from: `${SENDER_NAME} <${SENDER_EMAIL}>`,
         to: [r.email],

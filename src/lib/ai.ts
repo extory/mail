@@ -15,6 +15,9 @@ Rules:
 - The HTML should render well across all email clients
 - Write in the same language as the user's prompt`;
 
+const PERSONALIZED_ADDITION = `
+- IMPORTANT: Use {{name}} as a placeholder for the recipient's name. For example, start with a greeting like "안녕하세요 {{name}}님" or "Hello {{name}}". Use {{name}} naturally wherever you would address the recipient by name. Do NOT replace {{name}} with any actual name — keep it exactly as {{name}}.`;
+
 type Provider = "anthropic" | "gemini";
 
 function getProvider(): Provider {
@@ -27,12 +30,13 @@ function getProvider(): Provider {
   throw new Error("No AI API key configured. Set ANTHROPIC_API_KEY or GEMINI_API_KEY in .env.local");
 }
 
-async function generateWithAnthropic(prompt: string): Promise<ReadableStream> {
+async function generateWithAnthropic(prompt: string, useName: boolean): Promise<ReadableStream> {
   const client = new Anthropic();
+  const systemPrompt = useName ? SYSTEM_PROMPT + PERSONALIZED_ADDITION : SYSTEM_PROMPT;
   const stream = client.messages.stream({
     model: "claude-sonnet-4-6",
     max_tokens: 4096,
-    system: SYSTEM_PROMPT,
+    system: systemPrompt,
     messages: [{ role: "user", content: prompt }],
   });
 
@@ -57,16 +61,17 @@ async function generateWithAnthropic(prompt: string): Promise<ReadableStream> {
   });
 }
 
-async function generateWithGemini(prompt: string): Promise<ReadableStream> {
+async function generateWithGemini(prompt: string, useName: boolean): Promise<ReadableStream> {
   const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
   const encoder = new TextEncoder();
+  const systemPrompt = useName ? SYSTEM_PROMPT + PERSONALIZED_ADDITION : SYSTEM_PROMPT;
 
   return new ReadableStream({
     async start(controller) {
       try {
         const stream = await ai.models.generateContentStream({
           model: "gemini-2.5-flash",
-          contents: `${SYSTEM_PROMPT}\n\n${prompt}`,
+          contents: `${systemPrompt}\n\n${prompt}`,
         });
 
         for await (const chunk of stream) {
@@ -83,13 +88,13 @@ async function generateWithGemini(prompt: string): Promise<ReadableStream> {
   });
 }
 
-export async function generateEmailStream(prompt: string): Promise<ReadableStream> {
+export async function generateEmailStream(prompt: string, useName: boolean = false): Promise<ReadableStream> {
   const provider = getProvider();
 
   if (provider === "anthropic") {
-    return generateWithAnthropic(prompt);
+    return generateWithAnthropic(prompt, useName);
   } else {
-    return generateWithGemini(prompt);
+    return generateWithGemini(prompt, useName);
   }
 }
 

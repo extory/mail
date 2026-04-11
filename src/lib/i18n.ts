@@ -91,6 +91,7 @@ const translations = {
     "compose.sent_result": "Sent to {success} subscriber(s)",
     "compose.sent_failed": ", {failed} failed",
     "compose.error_generate": "Error generating email",
+    "compose.use_name": "Personalize with name ({{name}})",
     "compose.error_send": "Error sending emails",
 
     // Drafts
@@ -254,6 +255,7 @@ const translations = {
     "compose.sent_result": "{success}명에게 발송 완료",
     "compose.sent_failed": ", {failed}명 실패",
     "compose.error_generate": "이메일 생성 중 오류가 발생했습니다",
+    "compose.use_name": "이름 사용 ({{name}}으로 개인화)",
     "compose.error_send": "이메일 발송 중 오류가 발생했습니다",
 
     // Drafts

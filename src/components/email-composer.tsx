@@ -19,6 +19,7 @@ export function EmailComposer() {
   const [sendResult, setSendResult] = useState<string | null>(null);
   const [saveResult, setSaveResult] = useState<string | null>(null);
   const [showHtml, setShowHtml] = useState(false);
+  const [useName, setUseName] = useState(false);
   const [groups, setGroups] = useState<Group[]>([]);
   const [selectedGroupId, setSelectedGroupId] = useState<string>("");
 
@@ -55,7 +56,7 @@ export function EmailComposer() {
       const res = await fetch("/api/compose", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt }),
+        body: JSON.stringify({ prompt, useName }),
       });
 
       if (!res.ok) throw new Error("Failed to generate");
@@ -97,7 +98,7 @@ export function EmailComposer() {
     } finally {
       setGenerating(false);
     }
-  }, [prompt, t]);
+  }, [prompt, useName, t]);
 
   const handleSave = async () => {
     setSaving(true);
@@ -178,7 +179,17 @@ export function EmailComposer() {
           className="border border-border rounded-lg px-3 py-2.5 text-[13px] bg-white w-full min-h-[120px] resize-y focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand transition-all placeholder:text-text-muted"
           disabled={generating}
         />
-        <div className="mt-3 flex items-center gap-2">
+        <div className="mt-3 flex items-center gap-2 flex-wrap">
+          <label className="flex items-center gap-1.5 text-[13px] text-text-secondary cursor-pointer select-none mr-2">
+            <input
+              type="checkbox"
+              checked={useName}
+              onChange={(e) => setUseName(e.target.checked)}
+              className="w-4 h-4 rounded border-border text-brand focus:ring-brand/20"
+              disabled={generating}
+            />
+            {t("compose.use_name")}
+          </label>
           <button
             onClick={handleGenerate}
             disabled={generating || !prompt.trim()}
