@@ -45,6 +45,10 @@ data/*.db-wal
 # logs
 logs/
 
+# uploads
+public/uploads/*
+!public/uploads/.gitkeep
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

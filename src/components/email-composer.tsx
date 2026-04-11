@@ -1,9 +1,14 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import type { Group } from "@/lib/types";
 import { useLocale } from "./locale-provider";
+
+interface UploadedImage {
+  url: string;
+  filename: string;
+}
 
 export function EmailComposer() {
   const { t } = useLocale();
@@ -20,6 +25,9 @@ export function EmailComposer() {
   const [saveResult, setSaveResult] = useState<string | null>(null);
   const [showHtml, setShowHtml] = useState(false);
   const [useName, setUseName] = useState(false);
+  const [images, setImages] = useState<UploadedImage[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const imageInputRef = useRef<HTMLInputElement>(null);
   const [groups, setGroups] = useState<Group[]>([]);
   const [selectedGroupId, setSelectedGroupId] = useState<string>("");
 
@@ -56,7 +64,11 @@ export function EmailComposer() {
       const res = await fetch("/api/compose", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt, useName }),
+        body: JSON.stringify({
+          prompt,
+          useName,
+          imageUrls: images.length > 0 ? images.map((img) => img.url) : undefined,
+        }),
       });
 
       if (!res.ok) throw new Error("Failed to generate");
@@ -98,7 +110,7 @@ export function EmailComposer() {
     } finally {
       setGenerating(false);
     }
-  }, [prompt, useName, t]);
+  }, [prompt, useName, images, t]);
 
   const handleSave = async () => {
     setSaving(true);
@@ -163,6 +175,31 @@ export function EmailComposer() {
     }
   };
 
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    setUploading(true);
+    for (const file of Array.from(files)) {
+      const formData = new FormData();
+      formData.append("file", file);
+      try {
+        const res = await fetch("/api/uploads", { method: "POST", body: formData });
+        const data = await res.json();
+        if (data.url) {
+          setImages((prev) => [...prev, { url: data.url, filename: data.filename }]);
+        }
+      } catch {
+        // ignore failed uploads
+      }
+    }
+    setUploading(false);
+    if (imageInputRef.current) imageInputRef.current.value = "";
+  };
+
+  const removeImage = (index: number) => {
+    setImages((prev) => prev.filter((_, i) => i !== index));
+  };
+
   const inputClass = "border border-border rounded-lg px-3 h-[38px] text-[13px] bg-white focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand transition-all placeholder:text-text-muted";
 
   return (
@@ -179,6 +216,54 @@ export function EmailComposer() {
           className="border border-border rounded-lg px-3 py-2.5 text-[13px] bg-white w-full min-h-[120px] resize-y focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand transition-all placeholder:text-text-muted"
           disabled={generating}
         />
+
+        {/* Image upload */}
+        <div className="mt-3">
+          <div className="flex items-center gap-2 mb-2">
+            <input
+              ref={imageInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/gif,image/webp"
+              multiple
+              onChange={handleImageUpload}
+              className="hidden"
+            />
+            <button
+              type="button"
+              onClick={() => imageInputRef.current?.click()}
+              disabled={uploading || generating}
+              className="flex items-center gap-1.5 border border-border text-text-secondary px-3 py-1.5 rounded-lg text-[12px] font-medium hover:bg-surface hover:text-text-primary disabled:opacity-40 transition-colors"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="8.5" cy="8.5" r="1.5" /><polyline points="21 15 16 10 5 21" />
+              </svg>
+              {uploading ? "..." : t("compose.add_image")}
+            </button>
+            {images.length > 0 && (
+              <span className="text-[11px] text-text-muted">
+                {t("compose.images_count", { count: images.length })}
+              </span>
+            )}
+          </div>
+          {images.length > 0 && (
+            <div className="flex gap-2 flex-wrap">
+              {images.map((img, i) => (
+                <div key={i} className="relative group w-16 h-16 rounded-lg overflow-hidden border border-border">
+                  <img src={img.url} alt="" className="w-full h-full object-cover" />
+                  <button
+                    onClick={() => removeImage(i)}
+                    className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                    </svg>
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
         <div className="mt-3 flex items-center gap-2 flex-wrap">
           <label className="flex items-center gap-1.5 text-[13px] text-text-secondary cursor-pointer select-none mr-2">
             <input

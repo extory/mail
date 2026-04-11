@@ -18,7 +18,25 @@ Rules:
 const PERSONALIZED_ADDITION = `
 - IMPORTANT: Use {{name}} as a placeholder for the recipient's name. For example, start with a greeting like "안녕하세요 {{name}}님" or "Hello {{name}}". Use {{name}} naturally wherever you would address the recipient by name. Do NOT replace {{name}} with any actual name — keep it exactly as {{name}}.`;
 
+const IMAGE_ADDITION = (imageUrls: string[]) => `
+- The following images have been provided. Include them in the email using <img> tags with the EXACT URLs below. Place them naturally within the email layout (as hero images, inline illustrations, etc.). Use inline styles: max-width:100%; height:auto; display:block;
+${imageUrls.map((url, i) => `  Image ${i + 1}: ${url}`).join("\n")}`;
+
 type Provider = "anthropic" | "gemini";
+
+interface GenerateOptions {
+  useName?: boolean;
+  imageUrls?: string[];
+}
+
+function buildSystemPrompt(options: GenerateOptions): string {
+  let prompt = SYSTEM_PROMPT;
+  if (options.useName) prompt += PERSONALIZED_ADDITION;
+  if (options.imageUrls && options.imageUrls.length > 0) {
+    prompt += IMAGE_ADDITION(options.imageUrls);
+  }
+  return prompt;
+}
 
 function getProvider(): Provider {
   if (process.env.ANTHROPIC_API_KEY && !process.env.ANTHROPIC_API_KEY.includes("your-key")) {
@@ -30,9 +48,8 @@ function getProvider(): Provider {
   throw new Error("No AI API key configured. Set ANTHROPIC_API_KEY or GEMINI_API_KEY in .env.local");
 }
 
-async function generateWithAnthropic(prompt: string, useName: boolean): Promise<ReadableStream> {
+async function generateWithAnthropic(prompt: string, systemPrompt: string): Promise<ReadableStream> {
   const client = new Anthropic();
-  const systemPrompt = useName ? SYSTEM_PROMPT + PERSONALIZED_ADDITION : SYSTEM_PROMPT;
   const stream = client.messages.stream({
     model: "claude-sonnet-4-6",
     max_tokens: 4096,
@@ -61,10 +78,9 @@ async function generateWithAnthropic(prompt: string, useName: boolean): Promise<
   });
 }
 
-async function generateWithGemini(prompt: string, useName: boolean): Promise<ReadableStream> {
+async function generateWithGemini(prompt: string, systemPrompt: string): Promise<ReadableStream> {
   const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
   const encoder = new TextEncoder();
-  const systemPrompt = useName ? SYSTEM_PROMPT + PERSONALIZED_ADDITION : SYSTEM_PROMPT;
 
   return new ReadableStream({
     async start(controller) {
@@ -88,13 +104,17 @@ async function generateWithGemini(prompt: string, useName: boolean): Promise<Rea
   });
 }
 
-export async function generateEmailStream(prompt: string, useName: boolean = false): Promise<ReadableStream> {
+export async function generateEmailStream(
+  prompt: string,
+  options: GenerateOptions = {}
+): Promise<ReadableStream> {
   const provider = getProvider();
+  const systemPrompt = buildSystemPrompt(options);
 
   if (provider === "anthropic") {
-    return generateWithAnthropic(prompt, useName);
+    return generateWithAnthropic(prompt, systemPrompt);
   } else {
-    return generateWithGemini(prompt, useName);
+    return generateWithGemini(prompt, systemPrompt);
   }
 }
 
