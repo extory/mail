@@ -7,6 +7,8 @@ Rules:
 - Output the subject line on the FIRST line as: Subject: <subject here>
 - Then a blank line
 - Then the full HTML email body
+- Output RAW HTML only. Do NOT wrap the output in markdown code fences (no \`\`\`html, no \`\`\`, no backticks at all).
+- Do NOT include any explanatory text, preamble, or trailing comments — only the Subject line and the HTML body.
 - Use inline CSS styles only (no <style> tags, no external CSS)
 - Use a centered layout with max-width 600px
 - Keep the design clean, modern, and professional

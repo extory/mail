@@ -76,6 +76,14 @@ export function EmailComposer() {
       const reader = res.body?.getReader();
       if (!reader) throw new Error("No reader");
 
+      const stripCodeFences = (text: string): string => {
+        // Remove leading ```html, ```, or ```anything and trailing ```
+        return text
+          .replace(/^\s*```[a-zA-Z]*\s*\n?/, "")
+          .replace(/\n?\s*```\s*$/, "")
+          .trim();
+      };
+
       const decoder = new TextDecoder();
       let fullText = "";
       let subjectExtracted = false;
@@ -92,16 +100,16 @@ export function EmailComposer() {
             setSubject(firstLine.replace(/^subject:\s*/i, "").trim());
             subjectExtracted = true;
             const rest = fullText.substring(fullText.indexOf("\n") + 1).replace(/^\n+/, "");
-            setHtmlContent(rest);
+            setHtmlContent(stripCodeFences(rest));
             continue;
           }
         }
 
         if (subjectExtracted) {
           const rest = fullText.substring(fullText.indexOf("\n") + 1).replace(/^\n+/, "");
-          setHtmlContent(rest);
+          setHtmlContent(stripCodeFences(rest));
         } else {
-          setHtmlContent(fullText);
+          setHtmlContent(stripCodeFences(fullText));
         }
       }
     } catch (err) {

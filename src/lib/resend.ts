@@ -13,6 +13,13 @@ interface Recipient {
   name: string | null;
 }
 
+function stripCodeFences(text: string): string {
+  return text
+    .replace(/^\s*```[a-zA-Z]*\s*\n?/, "")
+    .replace(/\n?\s*```\s*$/, "")
+    .trim();
+}
+
 export async function sendBulkEmails(
   subject: string,
   htmlContent: string,
@@ -23,6 +30,9 @@ export async function sendBulkEmails(
   let success = 0;
   let failed = 0;
   let lastError: string | undefined;
+
+  // Defensive: strip any residual markdown code fences
+  htmlContent = stripCodeFences(htmlContent);
 
   for (let i = 0; i < recipients.length; i += BATCH_SIZE) {
     const batch = recipients.slice(i, i + BATCH_SIZE);
