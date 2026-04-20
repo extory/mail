@@ -20,22 +20,36 @@ Rules:
 const PERSONALIZED_ADDITION = `
 - IMPORTANT: Use {{name}} as a placeholder for the recipient's name. For example, start with a greeting like "안녕하세요 {{name}}님" or "Hello {{name}}". Use {{name}} naturally wherever you would address the recipient by name. Do NOT replace {{name}} with any actual name — keep it exactly as {{name}}.`;
 
-const IMAGE_ADDITION = (imageUrls: string[]) => `
-- The following images have been provided. Include them in the email using <img> tags with the EXACT URLs below. Place them naturally within the email layout (as hero images, inline illustrations, etc.). Use inline styles: max-width:100%; height:auto; display:block;
-${imageUrls.map((url, i) => `  Image ${i + 1}: ${url}`).join("\n")}`;
+export interface ImageInput {
+  url: string;
+  description?: string;
+}
+
+const IMAGE_ADDITION = (images: ImageInput[]) => `
+- IMAGES: The user has uploaded ${images.length} image(s). You MUST include ALL of them in the email as <img> tags with the EXACT URLs below.
+- Each image has a description explaining what it shows and/or where/how it should be used. Place each image according to its description, and write surrounding content that directly relates to what the image shows.
+- If an image has no description, infer its role from context (hero image, product shot, inline illustration) and position it naturally.
+- Use inline styles on every <img>: style="max-width:100%; height:auto; display:block; margin: 20px auto; border-radius: 8px;"
+- Wrap each image in a container with appropriate spacing. You may add a <figcaption>-style caption based on the description if it adds value.
+- The email body must meaningfully reference or describe the content of the images — do not just attach them without context.
+
+Images provided:
+${images.map((img, i) => `  [Image ${i + 1}]
+    URL: ${img.url}
+    ${img.description ? `Description / Intent: ${img.description}` : `Description: (none — infer from context)`}`).join("\n\n")}`;
 
 type Provider = "anthropic" | "gemini";
 
 interface GenerateOptions {
   useName?: boolean;
-  imageUrls?: string[];
+  images?: ImageInput[];
 }
 
 function buildSystemPrompt(options: GenerateOptions): string {
   let prompt = SYSTEM_PROMPT;
   if (options.useName) prompt += PERSONALIZED_ADDITION;
-  if (options.imageUrls && options.imageUrls.length > 0) {
-    prompt += IMAGE_ADDITION(options.imageUrls);
+  if (options.images && options.images.length > 0) {
+    prompt += IMAGE_ADDITION(options.images);
   }
   return prompt;
 }

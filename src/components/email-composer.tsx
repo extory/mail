@@ -8,6 +8,7 @@ import { useLocale } from "./locale-provider";
 interface UploadedImage {
   url: string;
   filename: string;
+  description: string;
 }
 
 export function EmailComposer() {
@@ -67,7 +68,9 @@ export function EmailComposer() {
         body: JSON.stringify({
           prompt,
           useName,
-          imageUrls: images.length > 0 ? images.map((img) => img.url) : undefined,
+          images: images.length > 0
+            ? images.map((img) => ({ url: img.url, description: img.description || undefined }))
+            : undefined,
         }),
       });
 
@@ -194,7 +197,7 @@ export function EmailComposer() {
         const res = await fetch("/api/uploads", { method: "POST", body: formData });
         const data = await res.json();
         if (data.url) {
-          setImages((prev) => [...prev, { url: data.url, filename: data.filename }]);
+          setImages((prev) => [...prev, { url: data.url, filename: data.filename, description: "" }]);
         }
       } catch {
         // ignore failed uploads
@@ -206,6 +209,10 @@ export function EmailComposer() {
 
   const removeImage = (index: number) => {
     setImages((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const updateImageDescription = (index: number, description: string) => {
+    setImages((prev) => prev.map((img, i) => (i === index ? { ...img, description } : img)));
   };
 
   const inputClass = "border border-border rounded-lg px-3 h-[38px] text-[13px] bg-white focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand transition-all placeholder:text-text-muted";
@@ -254,15 +261,30 @@ export function EmailComposer() {
             )}
           </div>
           {images.length > 0 && (
-            <div className="flex gap-2 flex-wrap">
+            <div className="space-y-2 mt-2">
               {images.map((img, i) => (
-                <div key={i} className="relative group w-16 h-16 rounded-lg overflow-hidden border border-border">
-                  <img src={img.url} alt="" className="w-full h-full object-cover" />
+                <div key={i} className="flex items-start gap-3 p-2 border border-border rounded-lg bg-surface/50">
+                  <div className="relative w-16 h-16 rounded-lg overflow-hidden border border-border flex-shrink-0 bg-white">
+                    <img src={img.url} alt="" className="w-full h-full object-cover" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <input
+                      type="text"
+                      value={img.description}
+                      onChange={(e) => updateImageDescription(i, e.target.value)}
+                      placeholder={t("compose.image_desc_placeholder")}
+                      disabled={generating}
+                      className="w-full border border-border rounded-md px-2.5 h-[32px] text-[12px] bg-white focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand transition-all placeholder:text-text-muted"
+                    />
+                    <p className="text-[10px] text-text-muted mt-1 truncate">{img.filename}</p>
+                  </div>
                   <button
                     onClick={() => removeImage(i)}
-                    className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity"
+                    disabled={generating}
+                    className="text-text-muted hover:text-danger p-1 transition-colors flex-shrink-0"
+                    title={t("remove")}
                   >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                       <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
                     </svg>
                   </button>
