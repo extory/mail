@@ -186,21 +186,90 @@ export function EmailComposer() {
     }
   };
 
+  const MAX_UPLOAD_SIZE = 4.5 * 1024 * 1024; // 4.5MB to be safe under 5MB limit
+  const MAX_DIMENSION = 1920; // Max width/height in pixels
+
+  const resizeImage = async (file: File): Promise<Blob> => {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      const reader = new FileReader();
+
+      reader.onload = (e) => {
+        img.src = e.target?.result as string;
+      };
+      reader.onerror = () => reject(new Error("Failed to read file"));
+
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        let { width, height } = img;
+
+        // Scale down if larger than MAX_DIMENSION
+        if (width > MAX_DIMENSION || height > MAX_DIMENSION) {
+          const ratio = Math.min(MAX_DIMENSION / width, MAX_DIMENSION / height);
+          width = Math.round(width * ratio);
+          height = Math.round(height * ratio);
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return reject(new Error("Canvas not supported"));
+        ctx.drawImage(img, 0, 0, width, height);
+
+        // Use JPEG for resized output (better compression), PNG if original was PNG and small
+        const type = file.type === "image/png" || file.type === "image/webp" ? file.type : "image/jpeg";
+        let quality = 0.85;
+
+        const tryExport = () => {
+          canvas.toBlob(
+            (blob) => {
+              if (!blob) return reject(new Error("Canvas export failed"));
+              if (blob.size > MAX_UPLOAD_SIZE && quality > 0.4) {
+                quality -= 0.1;
+                tryExport();
+              } else {
+                resolve(blob);
+              }
+            },
+            type,
+            quality
+          );
+        };
+        tryExport();
+      };
+      img.onerror = () => reject(new Error("Failed to load image"));
+
+      reader.readAsDataURL(file);
+    });
+  };
+
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
     setUploading(true);
     for (const file of Array.from(files)) {
-      const formData = new FormData();
-      formData.append("file", file);
       try {
+        let uploadBlob: Blob = file;
+        let uploadName = file.name;
+
+        // Resize if too large
+        if (file.size > MAX_UPLOAD_SIZE) {
+          uploadBlob = await resizeImage(file);
+          // Change extension to jpg if we re-encoded to jpeg
+          if (uploadBlob.type === "image/jpeg" && !file.name.toLowerCase().match(/\.jpe?g$/)) {
+            uploadName = file.name.replace(/\.[^.]+$/, "") + ".jpg";
+          }
+        }
+
+        const formData = new FormData();
+        formData.append("file", uploadBlob, uploadName);
         const res = await fetch("/api/uploads", { method: "POST", body: formData });
         const data = await res.json();
         if (data.url) {
           setImages((prev) => [...prev, { url: data.url, filename: data.filename, description: "" }]);
         }
-      } catch {
-        // ignore failed uploads
+      } catch (err) {
+        console.error("Upload failed:", err);
       }
     }
     setUploading(false);
