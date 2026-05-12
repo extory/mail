@@ -568,6 +568,11 @@ export interface SendLogStats {
   failed: number;
 }
 
+// Email lifecycle is cumulative: sent → delivered → opened → clicked.
+// last_event holds only the most recent state, so a clicked email no longer
+// counts toward opened/delivered if we look at last_event alone.
+// We use the email_events history to count whether each event has *ever*
+// occurred for a given email.
 export function getSendLogStats(): SendLogStats[] {
   const db = getDb();
   return db.prepare(`
@@ -576,13 +581,31 @@ export function getSendLogStats(): SendLogStats[] {
       sl.subject,
       sl.sent_at,
       sl.recipient_count,
-      COALESCE(COUNT(se.id), 0) as sent,
-      COALESCE(SUM(CASE WHEN se.last_event = 'delivered' THEN 1 ELSE 0 END), 0) as delivered,
-      COALESCE(SUM(CASE WHEN se.last_event = 'opened' THEN 1 ELSE 0 END), 0) as opened,
-      COALESCE(SUM(CASE WHEN se.last_event = 'clicked' THEN 1 ELSE 0 END), 0) as clicked,
-      COALESCE(SUM(CASE WHEN se.last_event = 'bounced' THEN 1 ELSE 0 END), 0) as bounced,
-      COALESCE(SUM(CASE WHEN se.last_event = 'complained' THEN 1 ELSE 0 END), 0) as complained,
-      COALESCE(SUM(CASE WHEN se.last_event = 'failed' THEN 1 ELSE 0 END), 0) as failed
+      COALESCE(COUNT(DISTINCT se.id), 0) as sent,
+      COALESCE(SUM(CASE
+        WHEN se.last_event IN ('delivered','opened','clicked')
+          OR EXISTS (SELECT 1 FROM email_events ev WHERE ev.resend_id = se.resend_id AND ev.event_type IN ('delivered','opened','clicked'))
+        THEN 1 ELSE 0 END), 0) as delivered,
+      COALESCE(SUM(CASE
+        WHEN se.last_event IN ('opened','clicked')
+          OR EXISTS (SELECT 1 FROM email_events ev WHERE ev.resend_id = se.resend_id AND ev.event_type IN ('opened','clicked'))
+        THEN 1 ELSE 0 END), 0) as opened,
+      COALESCE(SUM(CASE
+        WHEN se.last_event = 'clicked'
+          OR EXISTS (SELECT 1 FROM email_events ev WHERE ev.resend_id = se.resend_id AND ev.event_type = 'clicked')
+        THEN 1 ELSE 0 END), 0) as clicked,
+      COALESCE(SUM(CASE
+        WHEN se.last_event = 'bounced'
+          OR EXISTS (SELECT 1 FROM email_events ev WHERE ev.resend_id = se.resend_id AND ev.event_type = 'bounced')
+        THEN 1 ELSE 0 END), 0) as bounced,
+      COALESCE(SUM(CASE
+        WHEN se.last_event = 'complained'
+          OR EXISTS (SELECT 1 FROM email_events ev WHERE ev.resend_id = se.resend_id AND ev.event_type = 'complained')
+        THEN 1 ELSE 0 END), 0) as complained,
+      COALESCE(SUM(CASE
+        WHEN se.last_event = 'failed'
+          OR EXISTS (SELECT 1 FROM email_events ev WHERE ev.resend_id = se.resend_id AND ev.event_type = 'failed')
+        THEN 1 ELSE 0 END), 0) as failed
     FROM send_log sl
     LEFT JOIN sent_emails se ON se.send_log_id = sl.id
     GROUP BY sl.id
@@ -602,11 +625,26 @@ export function getOverallStats(): {
   return db.prepare(`
     SELECT
       COUNT(*) as total_sent,
-      SUM(CASE WHEN last_event = 'delivered' THEN 1 ELSE 0 END) as total_delivered,
-      SUM(CASE WHEN last_event = 'opened' THEN 1 ELSE 0 END) as total_opened,
-      SUM(CASE WHEN last_event = 'clicked' THEN 1 ELSE 0 END) as total_clicked,
-      SUM(CASE WHEN last_event = 'bounced' THEN 1 ELSE 0 END) as total_bounced,
-      SUM(CASE WHEN last_event = 'failed' THEN 1 ELSE 0 END) as total_failed
+      SUM(CASE
+        WHEN last_event IN ('delivered','opened','clicked')
+          OR EXISTS (SELECT 1 FROM email_events ev WHERE ev.resend_id = sent_emails.resend_id AND ev.event_type IN ('delivered','opened','clicked'))
+        THEN 1 ELSE 0 END) as total_delivered,
+      SUM(CASE
+        WHEN last_event IN ('opened','clicked')
+          OR EXISTS (SELECT 1 FROM email_events ev WHERE ev.resend_id = sent_emails.resend_id AND ev.event_type IN ('opened','clicked'))
+        THEN 1 ELSE 0 END) as total_opened,
+      SUM(CASE
+        WHEN last_event = 'clicked'
+          OR EXISTS (SELECT 1 FROM email_events ev WHERE ev.resend_id = sent_emails.resend_id AND ev.event_type = 'clicked')
+        THEN 1 ELSE 0 END) as total_clicked,
+      SUM(CASE
+        WHEN last_event = 'bounced'
+          OR EXISTS (SELECT 1 FROM email_events ev WHERE ev.resend_id = sent_emails.resend_id AND ev.event_type = 'bounced')
+        THEN 1 ELSE 0 END) as total_bounced,
+      SUM(CASE
+        WHEN last_event = 'failed'
+          OR EXISTS (SELECT 1 FROM email_events ev WHERE ev.resend_id = sent_emails.resend_id AND ev.event_type = 'failed')
+        THEN 1 ELSE 0 END) as total_failed
     FROM sent_emails
   `).get() as { total_sent: number; total_delivered: number; total_opened: number; total_clicked: number; total_bounced: number; total_failed: number };
 }

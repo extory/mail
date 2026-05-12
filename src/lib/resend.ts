@@ -151,12 +151,27 @@ export async function sendBulkEmails(
         failed += batch.length;
       } else if (result.data) {
         success += batch.length;
+        // Resend batch.send response shape varies by SDK version:
+        // - v5+: { data: { data: [{ id }, ...] } }
+        // - older: { data: [{ id }, ...] }
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const dataArr = (result.data as any).data ?? result.data;
+        const raw = result.data as any;
+        const dataArr: Array<{ id?: string }> = Array.isArray(raw)
+          ? raw
+          : Array.isArray(raw?.data)
+            ? raw.data
+            : [];
+        let savedCount = 0;
         for (let j = 0; j < dataArr.length; j++) {
           if (dataArr[j]?.id) {
-            saveSentEmail(sendLogId, dataArr[j].id, batch[j].email);
+            saveSentEmail(sendLogId, dataArr[j].id!, batch[j].email);
+            savedCount++;
           }
+        }
+        if (savedCount === 0) {
+          console.warn("[Resend] batch.send succeeded but no email IDs were saved. Response shape:", JSON.stringify(raw).slice(0, 500));
+        } else {
+          console.log(`[Resend] Saved ${savedCount}/${batch.length} email IDs for send_log ${sendLogId}`);
         }
       }
     } catch (err) {
