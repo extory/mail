@@ -38,6 +38,7 @@ export function EmailComposer() {
   const htmlTextareaRef = useRef<HTMLTextAreaElement>(null);
   const previewIframeRef = useRef<HTMLIFrameElement>(null);
   const [selectionRange, setSelectionRange] = useState<{ start: number; end: number } | null>(null);
+  const [sendAsImage, setSendAsImage] = useState(false);
 
   // Load draft if draftId in URL
   useEffect(() => {
@@ -159,18 +160,83 @@ export function EmailComposer() {
     }
   };
 
+  const renderHtmlToImage = async (): Promise<string | null> => {
+    const iframe = previewIframeRef.current;
+    if (!iframe || !iframe.contentDocument) return null;
+
+    const html2canvas = (await import("html2canvas")).default;
+    const target = iframe.contentDocument.body;
+    const canvas = await html2canvas(target, {
+      useCORS: true,
+      allowTaint: false,
+      backgroundColor: "#ffffff",
+      scale: 2, // higher resolution for retina
+      width: target.scrollWidth,
+      height: target.scrollHeight,
+      windowWidth: target.scrollWidth,
+      windowHeight: target.scrollHeight,
+    });
+
+    return new Promise<string | null>((resolve) => {
+      canvas.toBlob(async (blob) => {
+        if (!blob) return resolve(null);
+        const formData = new FormData();
+        formData.append("file", blob, `email-${Date.now()}.png`);
+        try {
+          const res = await fetch("/api/uploads", { method: "POST", body: formData });
+          const data = await res.json();
+          resolve(data.url || null);
+        } catch {
+          resolve(null);
+        }
+      }, "image/png", 0.95);
+    });
+  };
+
+  const buildImageOnlyHtml = (imageUrl: string, originalSubject: string): string => {
+    const absoluteUrl = imageUrl.startsWith("/") ? `${window.location.origin}${imageUrl}` : imageUrl;
+    return `<!DOCTYPE html>
+<html><head><meta charset="utf-8"></head>
+<body style="margin:0;padding:20px;background:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+  <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 auto;max-width:640px;width:100%;">
+    <tr>
+      <td style="text-align:center;">
+        <img src="${absoluteUrl}" alt="${originalSubject.replace(/"/g, "&quot;")}" style="max-width:100%;height:auto;display:block;margin:0 auto;border-radius:8px;" />
+      </td>
+    </tr>
+  </table>
+</body></html>`;
+  };
+
   const handleSend = async () => {
     if (!subject || !htmlContent) return;
     setSending(true);
     setSendResult(null);
 
     try {
+      let finalHtml = htmlContent;
+
+      if (sendAsImage) {
+        if (showHtml) {
+          setSendResult(t("compose.image_mode_needs_preview"));
+          setSending(false);
+          return;
+        }
+        const imageUrl = await renderHtmlToImage();
+        if (!imageUrl) {
+          setSendResult(t("compose.image_render_failed"));
+          setSending(false);
+          return;
+        }
+        finalHtml = buildImageOnlyHtml(imageUrl, subject);
+      }
+
       const res = await fetch("/api/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           subject,
-          htmlContent,
+          htmlContent: finalHtml,
           prompt,
           groupId: selectedGroupId ? Number(selectedGroupId) : undefined,
         }),
@@ -641,8 +707,21 @@ export function EmailComposer() {
 
       {/* Send controls */}
       {htmlContent && !generating && (
-        <div className="bg-surface-card border border-border rounded-xl p-5">
-          <div className="flex items-center gap-3 flex-wrap">
+        <div className="bg-surface-card border border-border rounded-xl p-5 space-y-3">
+          <label className="flex items-start gap-2 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={sendAsImage}
+              onChange={(e) => setSendAsImage(e.target.checked)}
+              className="w-4 h-4 mt-0.5 rounded border-border text-brand focus:ring-brand/20"
+              disabled={sending}
+            />
+            <div>
+              <span className="text-[13px] text-text-primary font-medium">{t("compose.send_as_image")}</span>
+              <p className="text-[11px] text-text-muted mt-0.5">{t("compose.send_as_image_desc")}</p>
+            </div>
+          </label>
+          <div className="flex items-center gap-3 flex-wrap pt-2 border-t border-border-light">
             <select
               value={selectedGroupId}
               onChange={(e) => setSelectedGroupId(e.target.value)}
@@ -658,10 +737,16 @@ export function EmailComposer() {
             <button
               onClick={handleSend}
               disabled={sending || !subject}
-              className="bg-brand text-white px-6 py-2.5 rounded-lg text-[13px] font-medium hover:bg-brand-dark disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              className="bg-brand text-white px-6 py-2.5 rounded-lg text-[13px] font-medium hover:bg-brand-dark disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
             >
+              {sending && (
+                <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+              )}
               {sending
-                ? t("compose.sending")
+                ? (sendAsImage ? t("compose.rendering_image") : t("compose.sending"))
                 : selectedGroupId
                   ? t("compose.send_group")
                   : t("compose.send_all")}

@@ -100,6 +100,11 @@ const translations = {
     "compose.apply_edit": "Apply",
     "compose.edit_not_found": "Could not locate the selection in the email. Try selecting again.",
     "compose.edit_failed": "Failed to edit selection",
+    "compose.send_as_image": "Send as image",
+    "compose.send_as_image_desc": "Renders the entire email as a single image. Prevents HTML rendering issues across email clients (Gmail, Outlook, etc.) but disables clickable links inside the body.",
+    "compose.rendering_image": "Rendering image...",
+    "compose.image_mode_needs_preview": "Switch to visual preview mode to use image rendering",
+    "compose.image_render_failed": "Failed to render email as image",
     "compose.error_send": "Error sending emails",
 
     // Drafts
@@ -272,6 +277,11 @@ const translations = {
     "compose.apply_edit": "적용",
     "compose.edit_not_found": "선택한 텍스트를 찾을 수 없습니다. 다시 선택해보세요.",
     "compose.edit_failed": "수정 중 오류가 발생했습니다",
+    "compose.send_as_image": "이미지로 발송",
+    "compose.send_as_image_desc": "전체 이메일을 하나의 이미지로 변환해서 발송합니다. Gmail, Outlook 등 이메일 클라이언트의 HTML 호환성 문제를 방지하지만, 본문 내 링크는 클릭할 수 없게 됩니다.",
+    "compose.rendering_image": "이미지 변환 중...",
+    "compose.image_mode_needs_preview": "이미지 발송은 미리보기 모드에서만 가능합니다",
+    "compose.image_render_failed": "이메일을 이미지로 변환하지 못했습니다",
     "compose.error_send": "이메일 발송 중 오류가 발생했습니다",
 
     // Drafts
