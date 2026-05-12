@@ -39,6 +39,7 @@ export function EmailComposer() {
   const previewIframeRef = useRef<HTMLIFrameElement>(null);
   const [selectionRange, setSelectionRange] = useState<{ start: number; end: number } | null>(null);
   const [sendAsImage, setSendAsImage] = useState(false);
+  const [imageLink, setImageLink] = useState("");
 
   // Load draft if draftId in URL
   useEffect(() => {
@@ -193,15 +194,30 @@ export function EmailComposer() {
     });
   };
 
-  const buildImageOnlyHtml = (imageUrl: string, originalSubject: string): string => {
+  const normalizeLink = (url: string): string | null => {
+    const trimmed = url.trim();
+    if (!trimmed) return null;
+    // Add https:// if no protocol
+    if (!/^https?:\/\//i.test(trimmed) && !/^mailto:/i.test(trimmed)) {
+      return `https://${trimmed}`;
+    }
+    return trimmed;
+  };
+
+  const buildImageOnlyHtml = (imageUrl: string, originalSubject: string, linkUrl?: string | null): string => {
     const absoluteUrl = imageUrl.startsWith("/") ? `${window.location.origin}${imageUrl}` : imageUrl;
+    const altText = originalSubject.replace(/"/g, "&quot;");
+    const imgTag = `<img src="${absoluteUrl}" alt="${altText}" style="max-width:100%;height:auto;display:block;margin:0 auto;border-radius:8px;border:0;" />`;
+    const content = linkUrl
+      ? `<a href="${linkUrl.replace(/"/g, "&quot;")}" target="_blank" style="text-decoration:none;display:inline-block;">${imgTag}</a>`
+      : imgTag;
     return `<!DOCTYPE html>
 <html><head><meta charset="utf-8"></head>
 <body style="margin:0;padding:20px;background:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
   <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 auto;max-width:640px;width:100%;">
     <tr>
       <td style="text-align:center;">
-        <img src="${absoluteUrl}" alt="${originalSubject.replace(/"/g, "&quot;")}" style="max-width:100%;height:auto;display:block;margin:0 auto;border-radius:8px;" />
+        ${content}
       </td>
     </tr>
   </table>
@@ -228,7 +244,7 @@ export function EmailComposer() {
           setSending(false);
           return;
         }
-        finalHtml = buildImageOnlyHtml(imageUrl, subject);
+        finalHtml = buildImageOnlyHtml(imageUrl, subject, normalizeLink(imageLink));
       }
 
       const res = await fetch("/api/send", {
@@ -721,6 +737,22 @@ export function EmailComposer() {
               <p className="text-[11px] text-text-muted mt-0.5">{t("compose.send_as_image_desc")}</p>
             </div>
           </label>
+          {sendAsImage && (
+            <div className="ml-6 pl-1">
+              <label className="block text-[12px] font-medium text-text-secondary mb-1.5">
+                {t("compose.image_link")}
+              </label>
+              <input
+                type="text"
+                value={imageLink}
+                onChange={(e) => setImageLink(e.target.value)}
+                placeholder={t("compose.image_link_placeholder")}
+                className="w-full max-w-md border border-border rounded-lg px-3 h-[38px] text-[13px] bg-white focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand transition-all placeholder:text-text-muted"
+                disabled={sending}
+              />
+              <p className="text-[11px] text-text-muted mt-1">{t("compose.image_link_hint")}</p>
+            </div>
+          )}
           <div className="flex items-center gap-3 flex-wrap pt-2 border-t border-border-light">
             <select
               value={selectedGroupId}
