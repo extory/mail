@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { importSubscribers } from "@/lib/db";
+import iconv from "iconv-lite";
 
 // Parse a single CSV line respecting double-quoted fields (which may contain commas)
 function parseCsvLine(line: string): string[] {
@@ -22,6 +23,44 @@ function parseCsvLine(line: string): string[] {
   return out.map((s) => s.trim());
 }
 
+// Detect encoding and decode CSV bytes to a string.
+// Tries UTF-8 (including BOM); falls back to EUC-KR/CP949 if UTF-8 looks invalid.
+function decodeCsv(buffer: Buffer): string {
+  // UTF-8 BOM
+  if (buffer.length >= 3 && buffer[0] === 0xEF && buffer[1] === 0xBB && buffer[2] === 0xBF) {
+    return buffer.slice(3).toString("utf-8");
+  }
+
+  // Try UTF-8 strict — if it throws or contains replacement chars, treat as not UTF-8
+  const utf8 = buffer.toString("utf-8");
+  if (!utf8.includes("�") && isLikelyValidUtf8(buffer)) {
+    return utf8;
+  }
+
+  // Fall back to CP949 (covers EUC-KR + extended Hangul, common in Excel-exported CSVs)
+  return iconv.decode(buffer, "cp949");
+}
+
+// A byte sequence is valid UTF-8 if every multi-byte char follows UTF-8 rules.
+function isLikelyValidUtf8(buf: Buffer): boolean {
+  let i = 0;
+  while (i < buf.length) {
+    const b = buf[i];
+    if (b < 0x80) { i++; continue; }
+    let needed = 0;
+    if ((b & 0xE0) === 0xC0) needed = 1;
+    else if ((b & 0xF0) === 0xE0) needed = 2;
+    else if ((b & 0xF8) === 0xF0) needed = 3;
+    else return false;
+    if (i + needed >= buf.length) return false;
+    for (let j = 1; j <= needed; j++) {
+      if ((buf[i + j] & 0xC0) !== 0x80) return false;
+    }
+    i += needed + 1;
+  }
+  return true;
+}
+
 export async function POST(request: NextRequest) {
   const formData = await request.formData();
   const file = formData.get("file") as File | null;
@@ -37,15 +76,13 @@ export async function POST(request: NextRequest) {
     return Response.json({ error: "CSV file is required" }, { status: 400 });
   }
 
-  const text = await file.text();
+  const buffer = Buffer.from(await file.arrayBuffer());
+  const text = decodeCsv(buffer);
   const lines = text.replace(/\r\n/g, "\n").split("\n").filter((line) => line.trim());
   if (lines.length === 0) {
     return Response.json({ error: "Empty CSV" }, { status: 400 });
   }
 
-  // Detect header row and column order
-  // Supported columns (case-insensitive): email, name, groups (or "group")
-  // Groups field may be semicolon, pipe, or vertical-bar separated.
   let emailIdx = 0;
   let nameIdx = 1;
   let groupsIdx = -1;
@@ -74,7 +111,6 @@ export async function POST(request: NextRequest) {
     const name = nameIdx >= 0 ? parts[nameIdx] : undefined;
     let groupNames: string[] | undefined;
     if (groupsIdx >= 0 && parts[groupsIdx]) {
-      // Split on ; | / to allow multiple groups per row
       groupNames = parts[groupsIdx]
         .split(/[;|/]/)
         .map((g) => g.trim())

@@ -114,10 +114,12 @@ export function SubscriberTable() {
   const handleDownloadTemplate = () => {
     const csv = `email,name,groups
 user@example.com,John Doe,VIP;Newsletter
-another@example.com,Jane,Newsletter
+another@example.com,홍길동,Newsletter
 plain@example.com,,
 `;
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    // Prepend BOM so Excel opens UTF-8 CSV correctly (preserves Korean characters)
+    const BOM = "﻿";
+    const blob = new Blob([BOM + csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
