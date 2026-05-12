@@ -272,20 +272,35 @@ function getOrCreateGroupByName(name: string): number {
   return Number(result.lastInsertRowid);
 }
 
+export interface SkippedRow {
+  email: string;
+  name?: string;
+  groupNames?: string[];
+  reason: string;
+}
+
+export interface ImportResult {
+  imported: number;
+  skipped: number;
+  created_groups: number;
+  updated: number;
+  skipped_rows: SkippedRow[];
+}
+
 export function importSubscribers(
   rows: { email: string; name?: string; groupNames?: string[] }[],
   defaultGroupIds?: number[]
-): { imported: number; skipped: number; created_groups: number } {
+): ImportResult {
   const db = getDb();
-  const insertSub = db.prepare(
-    "INSERT INTO subscribers (email, name) VALUES (?, ?) ON CONFLICT(email) DO NOTHING"
+  const findByEmail = db.prepare("SELECT id, name, status FROM subscribers WHERE email = ?");
+  const insertSub = db.prepare("INSERT INTO subscribers (email, name) VALUES (?, ?)");
+  const updateStatusAndName = db.prepare(
+    "UPDATE subscribers SET status = 'active', name = COALESCE(?, name) WHERE id = ?"
   );
   const insertGroup = db.prepare(
-    "INSERT OR IGNORE INTO subscriber_groups (subscriber_id, group_id) VALUES ((SELECT id FROM subscribers WHERE email = ?), ?)"
+    "INSERT OR IGNORE INTO subscriber_groups (subscriber_id, group_id) VALUES (?, ?)"
   );
 
-  // Pre-collect all distinct group names across rows so we resolve/create
-  // each name exactly once.
   const uniqueNames = new Set<string>();
   for (const row of rows) {
     if (row.groupNames) {
@@ -298,10 +313,12 @@ export function importSubscribers(
 
   const transaction = db.transaction(() => {
     let imported = 0;
+    let updated = 0;
     let skipped = 0;
     let createdGroups = 0;
+    const skipped_rows: SkippedRow[] = [];
+    const seenEmails = new Set<string>();
 
-    // Resolve group names → ids (creating new groups as needed)
     const nameToId = new Map<string, number>();
     for (const name of uniqueNames) {
       const existing = db.prepare("SELECT id FROM groups WHERE name = ?").get(name) as { id: number } | undefined;
@@ -315,28 +332,80 @@ export function importSubscribers(
     }
 
     for (const row of rows) {
-      const result = insertSub.run(row.email, row.name || null);
-      if (result.changes > 0) imported++;
-      else skipped++;
+      const email = row.email.toLowerCase().trim();
 
-      // Apply default group IDs (selected in UI before import)
-      if (defaultGroupIds && defaultGroupIds.length > 0) {
-        for (const gid of defaultGroupIds) insertGroup.run(row.email, gid);
+      // Validate email format
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        skipped++;
+        skipped_rows.push({ ...row, reason: "invalid_email" });
+        continue;
       }
 
-      // Apply per-row groups from CSV
+      // Duplicate within this CSV
+      if (seenEmails.has(email)) {
+        skipped++;
+        skipped_rows.push({ ...row, reason: "duplicate_in_csv" });
+        continue;
+      }
+      seenEmails.add(email);
+
+      const existing = findByEmail.get(email) as { id: number; name: string | null; status: string } | undefined;
+      let subscriberId: number;
+
+      if (existing) {
+        // Already in DB — re-activate and update name; record what happened
+        updateStatusAndName.run(row.name || null, existing.id);
+        subscriberId = existing.id;
+        if (existing.status === "unsubscribed") {
+          skipped++;
+          skipped_rows.push({ ...row, reason: "previously_unsubscribed" });
+        } else {
+          updated++;
+        }
+      } else {
+        // New subscriber
+        try {
+          const result = insertSub.run(email, row.name || null);
+          subscriberId = Number(result.lastInsertRowid);
+          imported++;
+        } catch (err) {
+          skipped++;
+          skipped_rows.push({
+            ...row,
+            reason: err instanceof Error ? `db_error: ${err.message}` : "db_error",
+          });
+          continue;
+        }
+      }
+
+      if (defaultGroupIds && defaultGroupIds.length > 0) {
+        for (const gid of defaultGroupIds) insertGroup.run(subscriberId, gid);
+      }
       if (row.groupNames) {
         for (const name of row.groupNames) {
           const trimmed = name.trim();
           if (!trimmed) continue;
           const gid = nameToId.get(trimmed);
-          if (gid) insertGroup.run(row.email, gid);
+          if (gid) insertGroup.run(subscriberId, gid);
         }
       }
     }
-    return { imported, skipped, created_groups: createdGroups };
+
+    return { imported, updated, skipped, created_groups: createdGroups, skipped_rows };
   });
   return transaction();
+}
+
+// Bulk delete (hard delete — for cleanup of bad imports)
+export function deleteSubscribers(ids: number[]): number {
+  if (ids.length === 0) return 0;
+  const db = getDb();
+  const placeholders = ids.map(() => "?").join(",");
+  // join table rows cascade via FK; do explicit delete to be safe even if FK
+  // pragma is not active
+  db.prepare(`DELETE FROM subscriber_groups WHERE subscriber_id IN (${placeholders})`).run(...ids);
+  const result = db.prepare(`DELETE FROM subscribers WHERE id IN (${placeholders})`).run(...ids);
+  return result.changes;
 }
 
 // Exported for use elsewhere

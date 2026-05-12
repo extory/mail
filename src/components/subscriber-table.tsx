@@ -4,6 +4,21 @@ import { useState, useEffect, useRef } from "react";
 import type { Subscriber, Group } from "@/lib/types";
 import { useLocale } from "./locale-provider";
 
+interface SkippedRow {
+  email: string;
+  name?: string;
+  groupNames?: string[];
+  reason: string;
+}
+
+interface ImportResultDetail {
+  imported: number;
+  skipped: number;
+  updated: number;
+  created_groups: number;
+  skipped_rows: SkippedRow[];
+}
+
 export function SubscriberTable() {
   const { t } = useLocale();
   const [subscribers, setSubscribers] = useState<Subscriber[]>([]);
@@ -14,8 +29,12 @@ export function SubscriberTable() {
   const [newName, setNewName] = useState("");
   const [newGroupIds, setNewGroupIds] = useState<number[]>([]);
   const [loading, setLoading] = useState(true);
-  const [importResult, setImportResult] = useState<string | null>(null);
+  const [importResult, setImportResult] = useState<ImportResultDetail | null>(null);
+  const [showSkipped, setShowSkipped] = useState(false);
+  const [retrying, setRetrying] = useState(false);
   const [openGroupPickerForId, setOpenGroupPickerForId] = useState<number | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [bulkDeleting, setBulkDeleting] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const groupPickerRef = useRef<HTMLDivElement>(null);
 
@@ -103,12 +122,118 @@ export function SubscriberTable() {
     formData.append("file", file);
     if (newGroupIds.length > 0) formData.append("groupIds", newGroupIds.join(","));
     const res = await fetch("/api/subscribers/import", { method: "POST", body: formData });
-    const result = await res.json();
-    setImportResult(t("subscribers.imported", { imported: result.imported, skipped: result.skipped }));
+    const result = (await res.json()) as ImportResultDetail;
+    setImportResult(result);
+    setShowSkipped((result.skipped_rows?.length ?? 0) > 0);
     fetchSubscribers();
     fetchGroups();
     if (fileRef.current) fileRef.current.value = "";
-    setTimeout(() => setImportResult(null), 3000);
+  };
+
+  const retryRow = async (row: SkippedRow) => {
+    if (row.reason === "invalid_email") return;
+    setRetrying(true);
+    try {
+      // For previously_unsubscribed: re-add as active. Server addSubscriber handles upsert.
+      // For duplicate_in_csv: just add (it's now standalone).
+      const groupIds = newGroupIds;
+      await fetch("/api/subscribers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: row.email,
+          name: row.name || undefined,
+          groupIds: groupIds.length > 0 ? groupIds : undefined,
+        }),
+      });
+      // Remove from skipped list
+      setImportResult((prev) =>
+        prev
+          ? {
+              ...prev,
+              skipped_rows: prev.skipped_rows.filter((r) => r.email !== row.email),
+              skipped: Math.max(0, prev.skipped - 1),
+              imported: prev.imported + 1,
+            }
+          : prev
+      );
+      fetchSubscribers();
+      fetchGroups();
+    } finally {
+      setRetrying(false);
+    }
+  };
+
+  const retryAllSkipped = async () => {
+    if (!importResult) return;
+    const retryable = importResult.skipped_rows.filter(
+      (r) => r.reason !== "invalid_email" && r.reason !== "duplicate_in_csv"
+    );
+    if (retryable.length === 0) return;
+    setRetrying(true);
+    for (const row of retryable) {
+      try {
+        await fetch("/api/subscribers", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            email: row.email,
+            name: row.name || undefined,
+            groupIds: newGroupIds.length > 0 ? newGroupIds : undefined,
+          }),
+        });
+      } catch {
+        // ignore
+      }
+    }
+    setImportResult(null);
+    setShowSkipped(false);
+    setRetrying(false);
+    fetchSubscribers();
+    fetchGroups();
+  };
+
+  const handleSelectAll = (checked: boolean) => {
+    if (checked) {
+      setSelectedIds(new Set(subscribers.map((s) => s.id)));
+    } else {
+      setSelectedIds(new Set());
+    }
+  };
+
+  const handleSelectOne = (id: number, checked: boolean) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.size === 0) return;
+    if (!confirm(t("subscribers.bulk_delete_confirm", { count: selectedIds.size }))) return;
+    setBulkDeleting(true);
+    try {
+      await fetch("/api/subscribers/bulk-delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: Array.from(selectedIds) }),
+      });
+      setSelectedIds(new Set());
+      fetchSubscribers();
+      fetchGroups();
+    } finally {
+      setBulkDeleting(false);
+    }
+  };
+
+  const reasonLabel = (reason: string): string => {
+    if (reason === "invalid_email") return t("subscribers.skip_invalid_email");
+    if (reason === "duplicate_in_csv") return t("subscribers.skip_duplicate");
+    if (reason === "previously_unsubscribed") return t("subscribers.skip_unsubscribed");
+    if (reason.startsWith("db_error")) return t("subscribers.skip_db_error");
+    return reason;
   };
 
   const handleDownloadTemplate = () => {
@@ -225,9 +350,104 @@ plain@example.com,,
         </form>
       </div>
 
+      {/* Import result */}
       {importResult && (
-        <div className="bg-success/10 text-success px-4 py-2.5 rounded-lg text-[13px] font-medium">
-          {importResult}
+        <div className="bg-surface-card border border-border rounded-xl p-5 space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4 text-[13px] flex-wrap">
+              <span className="text-success font-medium">
+                {t("subscribers.import_imported", { count: importResult.imported })}
+              </span>
+              {importResult.updated > 0 && (
+                <span className="text-text-secondary">
+                  {t("subscribers.import_updated", { count: importResult.updated })}
+                </span>
+              )}
+              {importResult.created_groups > 0 && (
+                <span className="text-brand">
+                  {t("subscribers.import_created_groups", { count: importResult.created_groups })}
+                </span>
+              )}
+              {importResult.skipped > 0 && (
+                <span className="text-warning font-medium">
+                  {t("subscribers.import_skipped", { count: importResult.skipped })}
+                </span>
+              )}
+            </div>
+            <button
+              onClick={() => { setImportResult(null); setShowSkipped(false); }}
+              className="text-text-muted hover:text-text-primary text-[12px] transition-colors"
+            >
+              {t("close")}
+            </button>
+          </div>
+          {importResult.skipped_rows.length > 0 && (
+            <div>
+              <button
+                onClick={() => setShowSkipped(!showSkipped)}
+                className="text-[12px] text-brand hover:text-brand-dark font-medium transition-colors flex items-center gap-1"
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`transition-transform ${showSkipped ? "rotate-90" : ""}`}>
+                  <polyline points="9 18 15 12 9 6" />
+                </svg>
+                {showSkipped ? t("subscribers.hide_skipped") : t("subscribers.show_skipped")}
+              </button>
+              {showSkipped && (
+                <div className="mt-3 border border-border rounded-lg overflow-hidden">
+                  <div className="flex items-center justify-between px-4 py-2 bg-surface border-b border-border-light">
+                    <span className="text-[12px] text-text-secondary">{importResult.skipped_rows.length} {t("subscribers.skipped_rows")}</span>
+                    {importResult.skipped_rows.some((r) => r.reason !== "invalid_email" && r.reason !== "duplicate_in_csv") && (
+                      <button
+                        onClick={retryAllSkipped}
+                        disabled={retrying}
+                        className="text-[12px] text-brand hover:text-brand-dark font-medium disabled:opacity-40 transition-colors"
+                      >
+                        {retrying ? "..." : t("subscribers.retry_all")}
+                      </button>
+                    )}
+                  </div>
+                  <table className="w-full text-[12px]">
+                    <thead>
+                      <tr className="bg-surface/50 border-b border-border-light">
+                        <th className="text-left px-4 py-2 font-medium text-text-secondary">{t("subscribers.email")}</th>
+                        <th className="text-left px-4 py-2 font-medium text-text-secondary">{t("subscribers.name")}</th>
+                        <th className="text-left px-4 py-2 font-medium text-text-secondary">{t("subscribers.skip_reason")}</th>
+                        <th className="text-right px-4 py-2 font-medium text-text-secondary">{t("actions")}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {importResult.skipped_rows.map((row, i) => (
+                        <tr key={i} className="border-b border-border-light last:border-0">
+                          <td className="px-4 py-2 text-text-primary">{row.email}</td>
+                          <td className="px-4 py-2 text-text-secondary">{row.name || "-"}</td>
+                          <td className="px-4 py-2">
+                            <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-medium ${
+                              row.reason === "invalid_email" ? "bg-danger/10 text-danger"
+                                : row.reason === "duplicate_in_csv" ? "bg-warning/10 text-warning"
+                                  : "bg-brand/10 text-brand"
+                            }`}>
+                              {reasonLabel(row.reason)}
+                            </span>
+                          </td>
+                          <td className="px-4 py-2 text-right">
+                            {row.reason !== "invalid_email" && row.reason !== "duplicate_in_csv" && (
+                              <button
+                                onClick={() => retryRow(row)}
+                                disabled={retrying}
+                                className="text-brand hover:text-brand-dark text-[12px] font-medium disabled:opacity-40 transition-colors"
+                              >
+                                {t("subscribers.retry")}
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 
@@ -258,11 +478,46 @@ plain@example.com,,
         </select>
       </div>
 
+      {/* Bulk actions bar */}
+      {selectedIds.size > 0 && (
+        <div className="flex items-center justify-between bg-brand/[0.06] border border-brand/20 rounded-xl px-4 py-2.5">
+          <span className="text-[13px] font-medium text-text-primary">
+            {t("subscribers.selected_count", { count: selectedIds.size })}
+          </span>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setSelectedIds(new Set())}
+              className="text-[12px] text-text-secondary hover:text-text-primary font-medium transition-colors"
+            >
+              {t("subscribers.clear_selection")}
+            </button>
+            <button
+              onClick={handleBulkDelete}
+              disabled={bulkDeleting}
+              className="bg-danger text-white px-4 py-1.5 rounded-lg text-[12px] font-medium hover:bg-danger/90 disabled:opacity-40 transition-colors"
+            >
+              {bulkDeleting ? "..." : t("subscribers.bulk_delete")}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Table */}
       <div className="bg-surface-card border border-border rounded-xl overflow-hidden">
         <table className="w-full text-[13px]">
           <thead>
             <tr className="border-b border-border-light bg-surface">
+              <th className="px-5 py-3 w-10">
+                <input
+                  type="checkbox"
+                  checked={subscribers.length > 0 && selectedIds.size === subscribers.length}
+                  ref={(el) => {
+                    if (el) el.indeterminate = selectedIds.size > 0 && selectedIds.size < subscribers.length;
+                  }}
+                  onChange={(e) => handleSelectAll(e.target.checked)}
+                  className="w-4 h-4 rounded border-border text-brand focus:ring-brand/20"
+                />
+              </th>
               <th className="text-left px-5 py-3 font-medium text-text-secondary text-[12px]">{t("subscribers.email")}</th>
               <th className="text-left px-5 py-3 font-medium text-text-secondary text-[12px]">{t("subscribers.name")}</th>
               <th className="text-left px-5 py-3 font-medium text-text-secondary text-[12px]">{t("subscribers.groups")}</th>
@@ -273,15 +528,23 @@ plain@example.com,,
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={5} className="text-center py-12 text-text-muted text-[13px]">{t("loading")}</td>
+                <td colSpan={6} className="text-center py-12 text-text-muted text-[13px]">{t("loading")}</td>
               </tr>
             ) : subscribers.length === 0 ? (
               <tr>
-                <td colSpan={5} className="text-center py-12 text-text-muted text-[13px]">{t("subscribers.no_subscribers")}</td>
+                <td colSpan={6} className="text-center py-12 text-text-muted text-[13px]">{t("subscribers.no_subscribers")}</td>
               </tr>
             ) : (
               subscribers.map((sub) => (
-                <tr key={sub.id} className="border-b border-border-light last:border-0 hover:bg-surface/50 transition-colors">
+                <tr key={sub.id} className={`border-b border-border-light last:border-0 hover:bg-surface/50 transition-colors ${selectedIds.has(sub.id) ? "bg-brand/[0.04]" : ""}`}>
+                  <td className="px-5 py-3">
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.has(sub.id)}
+                      onChange={(e) => handleSelectOne(sub.id, e.target.checked)}
+                      className="w-4 h-4 rounded border-border text-brand focus:ring-brand/20"
+                    />
+                  </td>
                   <td className="px-5 py-3 text-text-primary">{sub.email}</td>
                   <td className="px-5 py-3 text-text-secondary">{sub.name || "-"}</td>
                   <td className="px-5 py-3 relative">
