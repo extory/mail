@@ -3,7 +3,7 @@ import { getSubscribers, addSendLog } from "@/lib/db";
 import { sendBulkEmails } from "@/lib/resend";
 
 export async function POST(request: NextRequest) {
-  const { subject, htmlContent, prompt, groupId } = await request.json();
+  const { subject, htmlContent, prompt, groupId, embedImages } = await request.json();
 
   if (!subject || !htmlContent) {
     return Response.json(
@@ -28,7 +28,9 @@ export async function POST(request: NextRequest) {
   // Create send log first to get the ID
   const sendLog = addSendLog(subject, htmlContent, recipients.length, "sending", prompt);
 
-  const result = await sendBulkEmails(subject, htmlContent, recipients, sendLog.id);
+  const result = await sendBulkEmails(subject, htmlContent, recipients, sendLog.id, {
+    embedImages: embedImages === true,
+  });
 
   // Update send log status
   const status =

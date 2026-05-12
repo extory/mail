@@ -40,6 +40,7 @@ export function EmailComposer() {
   const [selectionRange, setSelectionRange] = useState<{ start: number; end: number } | null>(null);
   const [sendAsImage, setSendAsImage] = useState(false);
   const [imageLink, setImageLink] = useState("");
+  const [embedMode, setEmbedMode] = useState<"url" | "cid">("url");
 
   // Load draft if draftId in URL
   useEffect(() => {
@@ -255,6 +256,7 @@ export function EmailComposer() {
           htmlContent: finalHtml,
           prompt,
           groupId: selectedGroupId ? Number(selectedGroupId) : undefined,
+          embedImages: embedMode === "cid",
         }),
       });
       const result = await res.json();
@@ -753,6 +755,46 @@ export function EmailComposer() {
               <p className="text-[11px] text-text-muted mt-1">{t("compose.image_link_hint")}</p>
             </div>
           )}
+
+          {/* Image embed mode */}
+          <div className="pt-3 border-t border-border-light">
+            <p className="text-[12px] font-medium text-text-secondary mb-2">
+              {t("compose.embed_mode")}
+            </p>
+            <div className="space-y-2">
+              <label className="flex items-start gap-2 cursor-pointer select-none">
+                <input
+                  type="radio"
+                  name="embed-mode"
+                  value="url"
+                  checked={embedMode === "url"}
+                  onChange={() => setEmbedMode("url")}
+                  className="w-4 h-4 mt-0.5 border-border text-brand focus:ring-brand/20"
+                  disabled={sending}
+                />
+                <div>
+                  <span className="text-[13px] text-text-primary font-medium">{t("compose.embed_url")}</span>
+                  <p className="text-[11px] text-text-muted mt-0.5">{t("compose.embed_url_desc")}</p>
+                </div>
+              </label>
+              <label className="flex items-start gap-2 cursor-pointer select-none">
+                <input
+                  type="radio"
+                  name="embed-mode"
+                  value="cid"
+                  checked={embedMode === "cid"}
+                  onChange={() => setEmbedMode("cid")}
+                  className="w-4 h-4 mt-0.5 border-border text-brand focus:ring-brand/20"
+                  disabled={sending}
+                />
+                <div>
+                  <span className="text-[13px] text-text-primary font-medium">{t("compose.embed_cid")}</span>
+                  <p className="text-[11px] text-text-muted mt-0.5">{t("compose.embed_cid_desc")}</p>
+                </div>
+              </label>
+            </div>
+          </div>
+
           <div className="flex items-center gap-3 flex-wrap pt-2 border-t border-border-light">
             <select
               value={selectedGroupId}

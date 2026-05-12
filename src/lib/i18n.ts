@@ -110,6 +110,11 @@ const translations = {
     "compose.image_link": "Link on image (optional)",
     "compose.image_link_placeholder": "https://example.com/landing",
     "compose.image_link_hint": "The entire image will be clickable, leading to this URL. Leave empty for no link.",
+    "compose.embed_mode": "Image delivery method",
+    "compose.embed_url": "Link to images (default)",
+    "compose.embed_url_desc": "Images stay on the server and load on demand. Smaller email size, but some clients (especially Outlook) may block them by default.",
+    "compose.embed_cid": "Attach images (best for Outlook)",
+    "compose.embed_cid_desc": "Images are embedded as inline attachments using CID references. Larger email size, but displays reliably in Outlook, Apple Mail, and other strict clients.",
     "compose.error_send": "Error sending emails",
 
     // Drafts
@@ -292,6 +297,11 @@ const translations = {
     "compose.image_link": "이미지 클릭 시 이동할 링크 (선택)",
     "compose.image_link_placeholder": "https://example.com/landing",
     "compose.image_link_hint": "이미지 전체를 클릭하면 이 URL로 이동합니다. 비워두면 링크 없음.",
+    "compose.embed_mode": "이미지 발송 방식",
+    "compose.embed_url": "URL 링크 방식 (기본)",
+    "compose.embed_url_desc": "이미지를 서버에 두고 수신자가 열 때 로드합니다. 이메일 용량이 작지만, 일부 클라이언트(특히 아웃룩)에서 차단될 수 있습니다.",
+    "compose.embed_cid": "이미지 첨부 방식 (아웃룩 권장)",
+    "compose.embed_cid_desc": "이미지를 인라인 첨부파일로 함께 전송합니다(CID 참조). 이메일 용량은 커지지만 아웃룩, 애플메일 등 보수적인 클라이언트에서도 안정적으로 표시됩니다.",
     "compose.error_send": "이메일 발송 중 오류가 발생했습니다",
 
     // Drafts
