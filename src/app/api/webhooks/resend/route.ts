@@ -30,7 +30,17 @@ export async function POST(request: NextRequest) {
         const wh = new Webhook(WEBHOOK_SECRET);
         payload = wh.verify(rawBody, headers);
       } catch (err) {
-        console.error("[Webhook] Signature verification failed:", err instanceof Error ? err.message : err);
+        console.error("[Webhook] Signature verification failed:", {
+          error: err instanceof Error ? err.message : String(err),
+          secretLength: WEBHOOK_SECRET.length,
+          secretPrefix: WEBHOOK_SECRET.slice(0, 8),
+          headers: {
+            id: headers["svix-id"],
+            timestamp: headers["svix-timestamp"],
+            signaturePrefix: headers["svix-signature"]?.slice(0, 30),
+          },
+          bodyLength: rawBody.length,
+        });
         return Response.json({ error: "Invalid signature" }, { status: 401 });
       }
     } else {
