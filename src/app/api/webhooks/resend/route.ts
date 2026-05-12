@@ -1,29 +1,43 @@
 import { NextRequest } from "next/server";
 import { recordEmailEvent } from "@/lib/db";
-import { createHmac } from "crypto";
+import { Webhook } from "svix";
+
+// Resend uses Svix for webhook signing. The "Signing Secret" shown in the
+// Resend dashboard (whsec_...) must be set as RESEND_WEBHOOK_SECRET.
+// Svix sends three headers: svix-id, svix-timestamp, svix-signature.
 
 const WEBHOOK_SECRET = process.env.RESEND_WEBHOOK_SECRET;
-
-function verifyWebhookSignature(payload: string, signature: string | null): boolean {
-  if (!WEBHOOK_SECRET || !signature) return false;
-  const expected = createHmac("sha256", WEBHOOK_SECRET).update(payload).digest("base64");
-  return signature === expected;
-}
 
 export async function POST(request: NextRequest) {
   try {
     const rawBody = await request.text();
 
-    // Verify webhook signature if secret is configured
+    let payload: unknown;
+
     if (WEBHOOK_SECRET) {
-      const signature = request.headers.get("x-resend-signature");
-      if (!verifyWebhookSignature(rawBody, signature)) {
+      const headers = {
+        "svix-id": request.headers.get("svix-id") || "",
+        "svix-timestamp": request.headers.get("svix-timestamp") || "",
+        "svix-signature": request.headers.get("svix-signature") || "",
+      };
+
+      if (!headers["svix-id"] || !headers["svix-timestamp"] || !headers["svix-signature"]) {
+        console.error("[Webhook] Missing svix headers");
+        return Response.json({ error: "Missing signature headers" }, { status: 401 });
+      }
+
+      try {
+        const wh = new Webhook(WEBHOOK_SECRET);
+        payload = wh.verify(rawBody, headers);
+      } catch (err) {
+        console.error("[Webhook] Signature verification failed:", err instanceof Error ? err.message : err);
         return Response.json({ error: "Invalid signature" }, { status: 401 });
       }
+    } else {
+      payload = JSON.parse(rawBody);
     }
 
-    const body = JSON.parse(rawBody);
-    const { type, data } = body;
+    const { type, data } = payload as { type: string; data: { email_id?: string; bounce?: unknown; failed?: unknown; click?: unknown } };
 
     if (!type || !data?.email_id) {
       return Response.json({ error: "Invalid payload" }, { status: 400 });
