@@ -81,6 +81,10 @@ const translations = {
     "subscribers.bulk_delete": "Delete selected",
     "subscribers.bulk_delete_confirm": "Permanently delete {count} subscriber(s)? This cannot be undone.",
 
+    // Pagination
+    "pagination.showing": "Showing {from}–{to} of {total}",
+    "pagination.per_page": "Per page:",
+
     // Groups
     "groups.title": "Groups",
     "groups.description": "Organize subscribers into groups for targeted sending.",
@@ -290,6 +294,10 @@ const translations = {
     "subscribers.clear_selection": "선택 해제",
     "subscribers.bulk_delete": "선택 항목 삭제",
     "subscribers.bulk_delete_confirm": "{count}명을 영구 삭제하시겠습니까? 되돌릴 수 없습니다.",
+
+    // Pagination
+    "pagination.showing": "{total}개 중 {from}–{to}",
+    "pagination.per_page": "페이지당:",
 
     // Groups
     "groups.title": "그룹",

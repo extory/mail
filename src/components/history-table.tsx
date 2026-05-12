@@ -3,12 +3,15 @@
 import { useState, useEffect } from "react";
 import type { SendLog } from "@/lib/types";
 import { useLocale } from "./locale-provider";
+import { Pagination, paginate, type PageSize } from "./pagination";
 
 export function HistoryTable() {
   const { t } = useLocale();
   const [logs, setLogs] = useState<SendLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [previewId, setPreviewId] = useState<number | null>(null);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState<PageSize>(30);
 
   useEffect(() => {
     fetch("/api/history")
@@ -17,6 +20,7 @@ export function HistoryTable() {
   }, []);
 
   const previewLog = logs.find((l) => l.id === previewId);
+  const pageLogs = paginate(logs, page, pageSize);
 
   return (
     <div className="space-y-5">
@@ -41,7 +45,7 @@ export function HistoryTable() {
                 <td colSpan={5} className="text-center py-12 text-text-muted text-[13px]">{t("history.no_history")}</td>
               </tr>
             ) : (
-              logs.map((log) => (
+              pageLogs.map((log) => (
                 <tr key={log.id} className="border-b border-border-light last:border-0 hover:bg-surface/50 transition-colors">
                   <td className="px-5 py-3 text-text-muted">
                     {new Date(log.sent_at).toLocaleDateString()}
@@ -75,6 +79,14 @@ export function HistoryTable() {
           </tbody>
         </table>
       </div>
+
+      <Pagination
+        total={logs.length}
+        page={page}
+        pageSize={pageSize}
+        onPageChange={setPage}
+        onPageSizeChange={(s) => { setPageSize(s); setPage(1); }}
+      />
 
       {previewLog && (
         <div className="bg-surface-card border border-border rounded-xl overflow-hidden">

@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useLocale } from "@/components/locale-provider";
+import { Pagination, paginate, type PageSize } from "@/components/pagination";
 
 interface Overall {
   total_sent: number;
@@ -36,6 +37,8 @@ export default function StatisticsPage() {
   const [overall, setOverall] = useState<Overall | null>(null);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState<PageSize>(30);
 
   useEffect(() => {
     fetch("/api/statistics")
@@ -139,7 +142,7 @@ export default function StatisticsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {campaigns.map((c) => (
+                  {paginate(campaigns, page, pageSize).map((c) => (
                     <tr key={c.send_log_id} className="border-b border-border-light last:border-0 hover:bg-surface/50 transition-colors">
                       <td className="px-4 py-3 text-text-primary max-w-[200px] truncate">{c.subject}</td>
                       <td className="px-4 py-3 text-text-muted whitespace-nowrap">{new Date(c.sent_at).toLocaleDateString()}</td>
@@ -168,6 +171,14 @@ export default function StatisticsPage() {
               </table>
             </div>
           </div>
+
+          <Pagination
+            total={campaigns.length}
+            page={page}
+            pageSize={pageSize}
+            onPageChange={setPage}
+            onPageSizeChange={(s) => { setPageSize(s); setPage(1); }}
+          />
         </>
       )}
     </div>

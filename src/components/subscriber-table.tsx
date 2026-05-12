@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import type { Subscriber, Group } from "@/lib/types";
 import { useLocale } from "./locale-provider";
+import { Pagination, paginate, type PageSize } from "./pagination";
 
 interface SkippedRow {
   email: string;
@@ -35,6 +36,8 @@ export function SubscriberTable() {
   const [openGroupPickerForId, setOpenGroupPickerForId] = useState<number | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState<PageSize>(30);
   const fileRef = useRef<HTMLInputElement>(null);
   const groupPickerRef = useRef<HTMLDivElement>(null);
 
@@ -54,7 +57,7 @@ export function SubscriberTable() {
   };
 
   useEffect(() => { fetchGroups(); }, []);
-  useEffect(() => { fetchSubscribers(); }, [search, filterGroupId]);
+  useEffect(() => { fetchSubscribers(); setPage(1); }, [search, filterGroupId]);
 
   // Close popover when clicking outside
   useEffect(() => {
@@ -195,6 +198,7 @@ export function SubscriberTable() {
 
   const handleSelectAll = (checked: boolean) => {
     if (checked) {
+      // Select all subscribers across pages (matches "Select all" expectation)
       setSelectedIds(new Set(subscribers.map((s) => s.id)));
     } else {
       setSelectedIds(new Set());
@@ -535,7 +539,7 @@ plain@example.com,,
                 <td colSpan={6} className="text-center py-12 text-text-muted text-[13px]">{t("subscribers.no_subscribers")}</td>
               </tr>
             ) : (
-              subscribers.map((sub) => (
+              paginate(subscribers, page, pageSize).map((sub) => (
                 <tr key={sub.id} className={`border-b border-border-light last:border-0 hover:bg-surface/50 transition-colors ${selectedIds.has(sub.id) ? "bg-brand/[0.04]" : ""}`}>
                   <td className="px-5 py-3">
                     <input
@@ -618,9 +622,13 @@ plain@example.com,,
         </table>
       </div>
 
-      <p className="text-[12px] text-text-muted">
-        {t("subscribers.count", { count: subscribers.length })}
-      </p>
+      <Pagination
+        total={subscribers.length}
+        page={page}
+        pageSize={pageSize}
+        onPageChange={setPage}
+        onPageSizeChange={(s) => { setPageSize(s); setPage(1); }}
+      />
     </div>
   );
 }
