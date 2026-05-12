@@ -12,10 +12,12 @@ export function SubscriberTable() {
   const [filterGroupId, setFilterGroupId] = useState<string>("");
   const [newEmail, setNewEmail] = useState("");
   const [newName, setNewName] = useState("");
-  const [newGroupId, setNewGroupId] = useState<string>("");
+  const [newGroupIds, setNewGroupIds] = useState<number[]>([]);
   const [loading, setLoading] = useState(true);
   const [importResult, setImportResult] = useState<string | null>(null);
+  const [openGroupPickerForId, setOpenGroupPickerForId] = useState<number | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const groupPickerRef = useRef<HTMLDivElement>(null);
 
   const fetchGroups = async () => {
     const res = await fetch("/api/groups");
@@ -35,6 +37,24 @@ export function SubscriberTable() {
   useEffect(() => { fetchGroups(); }, []);
   useEffect(() => { fetchSubscribers(); }, [search, filterGroupId]);
 
+  // Close popover when clicking outside
+  useEffect(() => {
+    if (openGroupPickerForId === null) return;
+    const handler = (e: MouseEvent) => {
+      if (groupPickerRef.current && !groupPickerRef.current.contains(e.target as Node)) {
+        setOpenGroupPickerForId(null);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [openGroupPickerForId]);
+
+  const toggleNewGroupId = (id: number) => {
+    setNewGroupIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  };
+
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newEmail) return;
@@ -44,26 +64,36 @@ export function SubscriberTable() {
       body: JSON.stringify({
         email: newEmail,
         name: newName || undefined,
-        groupId: newGroupId ? Number(newGroupId) : undefined,
+        groupIds: newGroupIds,
       }),
     });
     setNewEmail("");
     setNewName("");
+    setNewGroupIds([]);
     fetchSubscribers();
+    fetchGroups();
   };
 
   const handleRemove = async (id: number) => {
     await fetch(`/api/subscribers/${id}`, { method: "DELETE" });
     fetchSubscribers();
+    fetchGroups();
   };
 
-  const handleGroupChange = async (subscriberId: number, groupId: string) => {
+  const handleGroupToggle = async (subscriberId: number, groupId: number) => {
+    const sub = subscribers.find((s) => s.id === subscriberId);
+    if (!sub) return;
+    const currentIds = sub.groups.map((g) => g.id);
+    const nextIds = currentIds.includes(groupId)
+      ? currentIds.filter((id) => id !== groupId)
+      : [...currentIds, groupId];
     await fetch("/api/subscribers", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: subscriberId, groupId: groupId ? Number(groupId) : null }),
+      body: JSON.stringify({ id: subscriberId, groupIds: nextIds }),
     });
     fetchSubscribers();
+    fetchGroups();
   };
 
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -71,11 +101,12 @@ export function SubscriberTable() {
     if (!file) return;
     const formData = new FormData();
     formData.append("file", file);
-    if (newGroupId) formData.append("groupId", newGroupId);
+    if (newGroupIds.length > 0) formData.append("groupIds", newGroupIds.join(","));
     const res = await fetch("/api/subscribers/import", { method: "POST", body: formData });
     const result = await res.json();
     setImportResult(t("subscribers.imported", { imported: result.imported, skipped: result.skipped }));
     fetchSubscribers();
+    fetchGroups();
     if (fileRef.current) fileRef.current.value = "";
     setTimeout(() => setImportResult(null), 3000);
   };
@@ -127,18 +158,33 @@ export function SubscriberTable() {
             </div>
             <div>
               <label className="block text-[12px] font-medium text-text-secondary mb-1.5">
-                {t("subscribers.group")}
+                {t("subscribers.groups")}
               </label>
-              <select
-                value={newGroupId}
-                onChange={(e) => setNewGroupId(e.target.value)}
-                className={`${selectClass} w-full`}
-              >
-                <option value="">-</option>
-                {groups.map((g) => (
-                  <option key={g.id} value={g.id}>{g.name}</option>
-                ))}
-              </select>
+              {groups.length === 0 ? (
+                <div className={`${selectClass} w-full flex items-center text-text-muted`}>
+                  {t("groups.no_groups")}
+                </div>
+              ) : (
+                <div className="border border-border rounded-lg bg-white p-1.5 flex flex-wrap gap-1 min-h-[38px]">
+                  {groups.map((g) => {
+                    const checked = newGroupIds.includes(g.id);
+                    return (
+                      <button
+                        key={g.id}
+                        type="button"
+                        onClick={() => toggleNewGroupId(g.id)}
+                        className={`text-[11px] px-2 py-1 rounded-md font-medium transition-colors ${
+                          checked
+                            ? "bg-brand text-white"
+                            : "bg-surface text-text-secondary hover:bg-border-light"
+                        }`}
+                      >
+                        {g.name}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -213,7 +259,7 @@ export function SubscriberTable() {
             <tr className="border-b border-border-light bg-surface">
               <th className="text-left px-5 py-3 font-medium text-text-secondary text-[12px]">{t("subscribers.email")}</th>
               <th className="text-left px-5 py-3 font-medium text-text-secondary text-[12px]">{t("subscribers.name")}</th>
-              <th className="text-left px-5 py-3 font-medium text-text-secondary text-[12px]">{t("subscribers.group")}</th>
+              <th className="text-left px-5 py-3 font-medium text-text-secondary text-[12px]">{t("subscribers.groups")}</th>
               <th className="text-left px-5 py-3 font-medium text-text-secondary text-[12px]">{t("subscribers.added")}</th>
               <th className="text-right px-5 py-3 font-medium text-text-secondary text-[12px]">{t("actions")}</th>
             </tr>
@@ -232,17 +278,58 @@ export function SubscriberTable() {
                 <tr key={sub.id} className="border-b border-border-light last:border-0 hover:bg-surface/50 transition-colors">
                   <td className="px-5 py-3 text-text-primary">{sub.email}</td>
                   <td className="px-5 py-3 text-text-secondary">{sub.name || "-"}</td>
-                  <td className="px-5 py-3">
-                    <select
-                      value={sub.group_id ?? ""}
-                      onChange={(e) => handleGroupChange(sub.id, e.target.value)}
-                      className="border border-border rounded-md px-2 py-1 text-[12px] bg-white focus:outline-none focus:ring-1 focus:ring-brand/20"
+                  <td className="px-5 py-3 relative">
+                    <button
+                      type="button"
+                      onClick={() => setOpenGroupPickerForId(openGroupPickerForId === sub.id ? null : sub.id)}
+                      className="flex flex-wrap gap-1 max-w-[280px] items-center hover:bg-surface px-1 -mx-1 rounded transition-colors min-h-[24px]"
                     >
-                      <option value="">-</option>
-                      {groups.map((g) => (
-                        <option key={g.id} value={g.id}>{g.name}</option>
-                      ))}
-                    </select>
+                      {sub.groups.length === 0 ? (
+                        <span className="text-[11px] text-text-muted italic">{t("subscribers.click_to_assign")}</span>
+                      ) : (
+                        sub.groups.map((g) => (
+                          <span
+                            key={g.id}
+                            className="inline-flex items-center text-[11px] px-2 py-0.5 rounded-md bg-brand/10 text-brand font-medium"
+                          >
+                            {g.name}
+                          </span>
+                        ))
+                      )}
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-text-muted ml-0.5">
+                        <polyline points="6 9 12 15 18 9" />
+                      </svg>
+                    </button>
+                    {openGroupPickerForId === sub.id && (
+                      <div
+                        ref={groupPickerRef}
+                        className="absolute z-10 top-full left-5 mt-1 bg-white border border-border rounded-lg shadow-lg py-1.5 min-w-[180px] max-h-[240px] overflow-y-auto"
+                      >
+                        {groups.length === 0 ? (
+                          <div className="px-3 py-2 text-[12px] text-text-muted">{t("groups.no_groups")}</div>
+                        ) : (
+                          groups.map((g) => {
+                            const checked = sub.groups.some((sg) => sg.id === g.id);
+                            return (
+                              <button
+                                key={g.id}
+                                type="button"
+                                onClick={() => handleGroupToggle(sub.id, g.id)}
+                                className="w-full flex items-center gap-2 px-3 py-1.5 text-[12px] text-text-primary hover:bg-surface transition-colors text-left"
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  readOnly
+                                  className="w-3.5 h-3.5 rounded border-border text-brand pointer-events-none"
+                                />
+                                {g.name}
+                              </button>
+                            );
+                          })
+                        )}
+                      </div>
+                    )}
                   </td>
                   <td className="px-5 py-3 text-text-muted">
                     {new Date(sub.created_at).toLocaleDateString()}

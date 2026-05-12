@@ -1,9 +1,13 @@
+export interface SubscriberGroupRef {
+  id: number;
+  name: string;
+}
+
 export interface Subscriber {
   id: number;
   email: string;
   name: string | null;
-  group_id: number | null;
-  group_name: string | null;
+  groups: SubscriberGroupRef[];
   created_at: string;
   status: "active" | "unsubscribed";
 }

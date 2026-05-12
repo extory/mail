@@ -4,8 +4,14 @@ import { importSubscribers } from "@/lib/db";
 export async function POST(request: NextRequest) {
   const formData = await request.formData();
   const file = formData.get("file") as File | null;
-  const groupIdStr = formData.get("groupId") as string | null;
-  const groupId = groupIdStr ? Number(groupIdStr) : undefined;
+  // Accept comma-separated group IDs (e.g. "3,7") or single ID
+  const groupIdsRaw = formData.get("groupIds") as string | null;
+  const legacyGroupId = formData.get("groupId") as string | null;
+  const source = groupIdsRaw || legacyGroupId || "";
+  const groupIds = source
+    .split(",")
+    .map((s) => Number(s.trim()))
+    .filter((n) => Number.isFinite(n) && n > 0);
 
   if (!file) {
     return Response.json({ error: "CSV file is required" }, { status: 400 });
@@ -27,6 +33,6 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  const result = importSubscribers(rows, groupId);
+  const result = importSubscribers(rows, groupIds);
   return Response.json(result);
 }

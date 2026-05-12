@@ -73,10 +73,29 @@ function getDb(): Database.Database {
         data TEXT,
         created_at TEXT DEFAULT (datetime('now'))
       );
+      CREATE TABLE IF NOT EXISTS subscriber_groups (
+        subscriber_id INTEGER NOT NULL,
+        group_id INTEGER NOT NULL,
+        created_at TEXT DEFAULT (datetime('now')),
+        PRIMARY KEY (subscriber_id, group_id),
+        FOREIGN KEY (subscriber_id) REFERENCES subscribers(id) ON DELETE CASCADE,
+        FOREIGN KEY (group_id) REFERENCES groups(id) ON DELETE CASCADE
+      );
       CREATE INDEX IF NOT EXISTS idx_sent_emails_send_log ON sent_emails(send_log_id);
       CREATE INDEX IF NOT EXISTS idx_sent_emails_resend_id ON sent_emails(resend_id);
       CREATE INDEX IF NOT EXISTS idx_email_events_resend_id ON email_events(resend_id);
+      CREATE INDEX IF NOT EXISTS idx_subscriber_groups_group ON subscriber_groups(group_id);
+      CREATE INDEX IF NOT EXISTS idx_subscriber_groups_subscriber ON subscriber_groups(subscriber_id);
     `);
+
+    // One-time migration: move legacy single group_id into join table
+    const migrated = db.prepare("SELECT COUNT(*) as c FROM subscriber_groups").get() as { c: number };
+    if (migrated.c === 0) {
+      db.exec(`
+        INSERT OR IGNORE INTO subscriber_groups (subscriber_id, group_id)
+        SELECT id, group_id FROM subscribers WHERE group_id IS NOT NULL
+      `);
+    }
   }
   return db;
 }
@@ -87,9 +106,10 @@ export function getGroups(): Group[] {
   const db = getDb();
   return db
     .prepare(`
-      SELECT g.*, COUNT(s.id) as subscriber_count
+      SELECT g.*, COUNT(DISTINCT sg.subscriber_id) as subscriber_count
       FROM groups g
-      LEFT JOIN subscribers s ON s.group_id = g.id AND s.status = 'active'
+      LEFT JOIN subscriber_groups sg ON sg.group_id = g.id
+      LEFT JOIN subscribers s ON s.id = sg.subscriber_id AND s.status = 'active'
       GROUP BY g.id
       ORDER BY g.name
     `)
@@ -104,18 +124,56 @@ export function addGroup(name: string): Group {
 
 export function deleteGroup(id: number): void {
   const db = getDb();
-  db.prepare("UPDATE subscribers SET group_id = NULL WHERE group_id = ?").run(id);
+  db.prepare("DELETE FROM subscriber_groups WHERE group_id = ?").run(id);
   db.prepare("DELETE FROM groups WHERE id = ?").run(id);
 }
 
 // --- Subscribers ---
 
+interface RawSubscriberRow {
+  id: number;
+  email: string;
+  name: string | null;
+  created_at: string;
+  status: "active" | "unsubscribed";
+}
+
+function attachGroups(rows: RawSubscriberRow[]): Subscriber[] {
+  if (rows.length === 0) return [];
+  const db = getDb();
+  const ids = rows.map((r) => r.id);
+  const placeholders = ids.map(() => "?").join(",");
+  const groupRows = db
+    .prepare(`
+      SELECT sg.subscriber_id, g.id as gid, g.name as gname
+      FROM subscriber_groups sg
+      JOIN groups g ON g.id = sg.group_id
+      WHERE sg.subscriber_id IN (${placeholders})
+      ORDER BY g.name
+    `)
+    .all(...ids) as { subscriber_id: number; gid: number; gname: string }[];
+
+  const byId = new Map<number, { id: number; name: string }[]>();
+  for (const r of rows) byId.set(r.id, []);
+  for (const g of groupRows) {
+    byId.get(g.subscriber_id)?.push({ id: g.gid, name: g.gname });
+  }
+
+  return rows.map((r) => ({
+    id: r.id,
+    email: r.email,
+    name: r.name,
+    created_at: r.created_at,
+    status: r.status,
+    groups: byId.get(r.id) || [],
+  }));
+}
+
 export function getSubscribers(search?: string, groupId?: number): Subscriber[] {
   const db = getDb();
   let sql = `
-    SELECT s.*, g.name as group_name
+    SELECT s.id, s.email, s.name, s.created_at, s.status
     FROM subscribers s
-    LEFT JOIN groups g ON s.group_id = g.id
     WHERE s.status = 'active'
   `;
   const params: (string | number)[] = [];
@@ -126,15 +184,16 @@ export function getSubscribers(search?: string, groupId?: number): Subscriber[] 
   }
   if (groupId !== undefined) {
     if (groupId === 0) {
-      sql += " AND s.group_id IS NULL";
+      sql += " AND NOT EXISTS (SELECT 1 FROM subscriber_groups sg2 WHERE sg2.subscriber_id = s.id)";
     } else {
-      sql += " AND s.group_id = ?";
+      sql += " AND EXISTS (SELECT 1 FROM subscriber_groups sg2 WHERE sg2.subscriber_id = s.id AND sg2.group_id = ?)";
       params.push(groupId);
     }
   }
 
   sql += " ORDER BY s.created_at DESC";
-  return db.prepare(sql).all(...params) as Subscriber[];
+  const rows = db.prepare(sql).all(...params) as RawSubscriberRow[];
+  return attachGroups(rows);
 }
 
 export function getSubscriberCount(): number {
@@ -145,20 +204,53 @@ export function getSubscriberCount(): number {
   return row.count;
 }
 
-export function addSubscriber(email: string, name?: string, groupId?: number): Subscriber {
+function setSubscriberGroups(subscriberId: number, groupIds: number[]): void {
   const db = getDb();
-  const stmt = db.prepare(
-    "INSERT INTO subscribers (email, name, group_id) VALUES (?, ?, ?) ON CONFLICT(email) DO UPDATE SET status = 'active', name = COALESCE(?, name), group_id = COALESCE(?, group_id)"
-  );
-  stmt.run(email, name || null, groupId || null, name || null, groupId || null);
-  return db
-    .prepare("SELECT s.*, g.name as group_name FROM subscribers s LEFT JOIN groups g ON s.group_id = g.id WHERE s.email = ?")
-    .get(email) as Subscriber;
+  db.prepare("DELETE FROM subscriber_groups WHERE subscriber_id = ?").run(subscriberId);
+  if (groupIds.length === 0) return;
+  const insert = db.prepare("INSERT OR IGNORE INTO subscriber_groups (subscriber_id, group_id) VALUES (?, ?)");
+  const tx = db.transaction(() => {
+    for (const gid of groupIds) insert.run(subscriberId, gid);
+  });
+  tx();
 }
 
-export function updateSubscriberGroup(id: number, groupId: number | null): void {
+function addToGroups(subscriberId: number, groupIds: number[]): void {
+  if (groupIds.length === 0) return;
   const db = getDb();
-  db.prepare("UPDATE subscribers SET group_id = ? WHERE id = ?").run(groupId, id);
+  const insert = db.prepare("INSERT OR IGNORE INTO subscriber_groups (subscriber_id, group_id) VALUES (?, ?)");
+  const tx = db.transaction(() => {
+    for (const gid of groupIds) insert.run(subscriberId, gid);
+  });
+  tx();
+}
+
+function getSubscriberById(id: number): Subscriber | undefined {
+  const db = getDb();
+  const row = db.prepare(`
+    SELECT s.id, s.email, s.name, s.created_at, s.status
+    FROM subscribers s WHERE s.id = ?
+  `).get(id) as RawSubscriberRow | undefined;
+  if (!row) return undefined;
+  return attachGroups([row])[0];
+}
+
+export function addSubscriber(email: string, name?: string, groupIds?: number[]): Subscriber {
+  const db = getDb();
+  db.prepare(
+    "INSERT INTO subscribers (email, name) VALUES (?, ?) ON CONFLICT(email) DO UPDATE SET status = 'active', name = COALESCE(?, name)"
+  ).run(email, name || null, name || null);
+
+  const sub = db.prepare("SELECT id FROM subscribers WHERE email = ?").get(email) as { id: number };
+  if (groupIds && groupIds.length > 0) {
+    addToGroups(sub.id, groupIds);
+  }
+
+  return getSubscriberById(sub.id)!;
+}
+
+export function updateSubscriberGroups(id: number, groupIds: number[]): void {
+  setSubscriberGroups(id, groupIds);
 }
 
 export function removeSubscriber(id: number): void {
@@ -174,19 +266,25 @@ export function unsubscribeByEmail(email: string): boolean {
 
 export function importSubscribers(
   rows: { email: string; name?: string }[],
-  groupId?: number
+  groupIds?: number[]
 ): { imported: number; skipped: number } {
   const db = getDb();
-  const stmt = db.prepare(
-    "INSERT INTO subscribers (email, name, group_id) VALUES (?, ?, ?) ON CONFLICT(email) DO NOTHING"
+  const insertSub = db.prepare(
+    "INSERT INTO subscribers (email, name) VALUES (?, ?) ON CONFLICT(email) DO NOTHING"
+  );
+  const insertGroup = db.prepare(
+    "INSERT OR IGNORE INTO subscriber_groups (subscriber_id, group_id) VALUES ((SELECT id FROM subscribers WHERE email = ?), ?)"
   );
   const transaction = db.transaction(() => {
     let imported = 0;
     let skipped = 0;
     for (const row of rows) {
-      const result = stmt.run(row.email, row.name || null, groupId || null);
+      const result = insertSub.run(row.email, row.name || null);
       if (result.changes > 0) imported++;
       else skipped++;
+      if (groupIds && groupIds.length > 0) {
+        for (const gid of groupIds) insertGroup.run(row.email, gid);
+      }
     }
     return { imported, skipped };
   });
@@ -333,7 +431,6 @@ export function saveSentEmail(sendLogId: number, resendId: string, recipientEmai
 export function recordEmailEvent(resendId: string, eventType: string, data?: string): void {
   const db = getDb();
   db.prepare("INSERT INTO email_events (resend_id, event_type, data) VALUES (?, ?, ?)").run(resendId, eventType, data || null);
-  // Update last_event on sent_emails
   db.prepare("UPDATE sent_emails SET last_event = ? WHERE resend_id = ?").run(eventType, resendId);
 }
 
@@ -406,9 +503,10 @@ export function getDashboardData() {
   const campaignCount = (db.prepare("SELECT COUNT(*) as c FROM send_log").get() as { c: number }).c;
 
   const groups = db.prepare(`
-    SELECT g.name, COUNT(s.id) as count
+    SELECT g.name, COUNT(DISTINCT sg.subscriber_id) as count
     FROM groups g
-    LEFT JOIN subscribers s ON s.group_id = g.id AND s.status = 'active'
+    LEFT JOIN subscriber_groups sg ON sg.group_id = g.id
+    LEFT JOIN subscribers s ON s.id = sg.subscriber_id AND s.status = 'active'
     GROUP BY g.id ORDER BY count DESC LIMIT 5
   `).all() as { name: string; count: number }[];
 

@@ -60,6 +60,8 @@ const translations = {
     "subscribers.all_groups": "All Groups",
     "subscribers.no_group": "No Group",
     "subscribers.download_template": "CSV Template",
+    "subscribers.groups": "Groups",
+    "subscribers.click_to_assign": "Click to assign",
 
     // Groups
     "groups.title": "Groups",
@@ -240,6 +242,8 @@ const translations = {
     "subscribers.all_groups": "전체 그룹",
     "subscribers.no_group": "그룹 없음",
     "subscribers.download_template": "CSV 양식 다운로드",
+    "subscribers.groups": "그룹",
+    "subscribers.click_to_assign": "클릭해서 그룹 지정",
 
     // Groups
     "groups.title": "그룹",
