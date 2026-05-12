@@ -95,6 +95,11 @@ const translations = {
     "compose.add_image": "Add Image",
     "compose.images_count": "{count} image(s)",
     "compose.image_desc_placeholder": "What is this image? How should it be used? (e.g. Hero banner, product photo, team photo...)",
+    "compose.edit_selection": "Edit selected text",
+    "compose.edit_placeholder": "How should this be changed? (e.g. shorter, more formal, fix typo)",
+    "compose.apply_edit": "Apply",
+    "compose.edit_not_found": "Could not locate the selection in the email. Try selecting again.",
+    "compose.edit_failed": "Failed to edit selection",
     "compose.error_send": "Error sending emails",
 
     // Drafts
@@ -262,6 +267,11 @@ const translations = {
     "compose.add_image": "이미지 추가",
     "compose.images_count": "이미지 {count}개",
     "compose.image_desc_placeholder": "이 이미지는 무엇인가요? 어떻게 사용할까요? (예: 메인 배너, 제품 사진, 팀 사진...)",
+    "compose.edit_selection": "선택한 부분 수정",
+    "compose.edit_placeholder": "어떻게 수정할까요? (예: 더 짧게, 더 정중하게, 오타 수정)",
+    "compose.apply_edit": "적용",
+    "compose.edit_not_found": "선택한 텍스트를 찾을 수 없습니다. 다시 선택해보세요.",
+    "compose.edit_failed": "수정 중 오류가 발생했습니다",
     "compose.error_send": "이메일 발송 중 오류가 발생했습니다",
 
     // Drafts

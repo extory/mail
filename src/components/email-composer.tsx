@@ -31,6 +31,13 @@ export function EmailComposer() {
   const imageInputRef = useRef<HTMLInputElement>(null);
   const [groups, setGroups] = useState<Group[]>([]);
   const [selectedGroupId, setSelectedGroupId] = useState<string>("");
+  const [selectedText, setSelectedText] = useState("");
+  const [editInstruction, setEditInstruction] = useState("");
+  const [editing, setEditing] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+  const htmlTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const previewIframeRef = useRef<HTMLIFrameElement>(null);
+  const [selectionRange, setSelectionRange] = useState<{ start: number; end: number } | null>(null);
 
   // Load draft if draftId in URL
   useEffect(() => {
@@ -284,6 +291,120 @@ export function EmailComposer() {
     setImages((prev) => prev.map((img, i) => (i === index ? { ...img, description } : img)));
   };
 
+  // Selection handling for inline editing
+  const handleTextareaSelect = () => {
+    const ta = htmlTextareaRef.current;
+    if (!ta) return;
+    const start = ta.selectionStart;
+    const end = ta.selectionEnd;
+    if (start === end) {
+      setSelectedText("");
+      setSelectionRange(null);
+      return;
+    }
+    setSelectedText(htmlContent.substring(start, end));
+    setSelectionRange({ start, end });
+    setEditError(null);
+  };
+
+  // Listen for selection from iframe via postMessage
+  useEffect(() => {
+    const handler = (e: MessageEvent) => {
+      if (e.data?.type === "preview-selection" && typeof e.data.text === "string") {
+        setSelectedText(e.data.text);
+        setSelectionRange(null); // No exact range from visual preview
+        setEditError(null);
+      }
+    };
+    window.addEventListener("message", handler);
+    return () => window.removeEventListener("message", handler);
+  }, []);
+
+  // Inject selection listener into iframe
+  useEffect(() => {
+    if (showHtml || !htmlContent) return;
+    const iframe = previewIframeRef.current;
+    if (!iframe) return;
+
+    const tryInject = () => {
+      try {
+        const doc = iframe.contentDocument;
+        if (!doc) return;
+        const script = doc.createElement("script");
+        script.textContent = `
+          document.addEventListener('mouseup', function() {
+            const sel = window.getSelection();
+            const text = sel ? sel.toString() : '';
+            if (text.trim().length > 0) {
+              parent.postMessage({ type: 'preview-selection', text: text }, '*');
+            }
+          });
+        `;
+        doc.body?.appendChild(script);
+      } catch {
+        // sandboxed iframes block this — that's fine, user can switch to HTML view
+      }
+    };
+
+    iframe.addEventListener("load", tryInject);
+    // Try immediately too in case already loaded
+    tryInject();
+    return () => iframe.removeEventListener("load", tryInject);
+  }, [htmlContent, showHtml]);
+
+  const applyEdit = async () => {
+    if (!selectedText || !editInstruction.trim()) return;
+    setEditing(true);
+    setEditError(null);
+    try {
+      const res = await fetch("/api/compose/edit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ selection: selectedText, instruction: editInstruction.trim() }),
+      });
+      const data = await res.json();
+      if (data.error) {
+        setEditError(data.error);
+        return;
+      }
+      // Replace selected text in htmlContent
+      if (selectionRange) {
+        // textarea-based: exact replacement by index
+        const newContent =
+          htmlContent.substring(0, selectionRange.start) +
+          data.result +
+          htmlContent.substring(selectionRange.end);
+        setHtmlContent(newContent);
+      } else {
+        // iframe-based: first occurrence replacement
+        const idx = htmlContent.indexOf(selectedText);
+        if (idx === -1) {
+          setEditError(t("compose.edit_not_found"));
+          return;
+        }
+        const newContent =
+          htmlContent.substring(0, idx) +
+          data.result +
+          htmlContent.substring(idx + selectedText.length);
+        setHtmlContent(newContent);
+      }
+      setSelectedText("");
+      setSelectionRange(null);
+      setEditInstruction("");
+    } catch {
+      setEditError(t("compose.edit_failed"));
+    } finally {
+      setEditing(false);
+    }
+  };
+
+  const cancelEdit = () => {
+    setSelectedText("");
+    setSelectionRange(null);
+    setEditInstruction("");
+    setEditError(null);
+  };
+
   const inputClass = "border border-border rounded-lg px-3 h-[38px] text-[13px] bg-white focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand transition-all placeholder:text-text-muted";
 
   return (
@@ -446,17 +567,74 @@ export function EmailComposer() {
 
           {showHtml ? (
             <textarea
+              ref={htmlTextareaRef}
               value={htmlContent}
               onChange={(e) => setHtmlContent(e.target.value)}
+              onSelect={handleTextareaSelect}
+              onMouseUp={handleTextareaSelect}
+              onKeyUp={handleTextareaSelect}
               className="w-full px-5 py-4 text-[12px] font-mono min-h-[400px] resize-y bg-white border-0 focus:outline-none text-text-primary"
             />
           ) : (
             <iframe
+              ref={previewIframeRef}
               srcDoc={htmlContent}
-              sandbox=""
+              sandbox="allow-same-origin allow-scripts"
               className="w-full min-h-[500px] border-0 bg-white"
               title="Email Preview"
             />
+          )}
+        </div>
+      )}
+
+      {/* Selection edit panel */}
+      {htmlContent && selectedText && (
+        <div className="bg-surface-card border border-brand/30 rounded-xl p-5 shadow-[0_4px_24px_rgba(21,93,252,0.08)]">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-[13px] font-semibold text-text-primary flex items-center gap-2">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-brand">
+                <path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+              </svg>
+              {t("compose.edit_selection")}
+            </h3>
+            <button
+              onClick={cancelEdit}
+              className="text-text-muted hover:text-text-primary text-[12px] transition-colors"
+            >
+              {t("cancel")}
+            </button>
+          </div>
+          <div className="bg-surface rounded-lg p-3 mb-3 text-[12px] text-text-secondary max-h-24 overflow-y-auto whitespace-pre-wrap break-words">
+            {selectedText.length > 300 ? selectedText.slice(0, 300) + "..." : selectedText}
+          </div>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={editInstruction}
+              onChange={(e) => setEditInstruction(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && editInstruction.trim() && !editing) applyEdit();
+              }}
+              placeholder={t("compose.edit_placeholder")}
+              className="flex-1 border border-border rounded-lg px-3 h-[38px] text-[13px] bg-white focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand transition-all placeholder:text-text-muted"
+              autoFocus
+              disabled={editing}
+            />
+            <button
+              onClick={applyEdit}
+              disabled={editing || !editInstruction.trim()}
+              className="bg-brand text-white px-5 h-[38px] rounded-lg text-[13px] font-medium hover:bg-brand-dark disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center gap-1.5"
+            >
+              {editing ? (
+                <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+              ) : t("compose.apply_edit")}
+            </button>
+          </div>
+          {editError && (
+            <p className="mt-2 text-[12px] text-danger font-medium">{editError}</p>
           )}
         </div>
       )}

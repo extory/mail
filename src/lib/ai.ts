@@ -134,6 +134,53 @@ export async function generateEmailStream(
   }
 }
 
+const EDIT_SYSTEM_PROMPT = `You are an expert email content editor. The user will provide you with a snippet of text (selection) from a larger email and an instruction describing how to modify it.
+
+Rules:
+- Output ONLY the replacement text for the selection — nothing else.
+- Do NOT include any preamble, explanation, or surrounding context.
+- Do NOT wrap output in markdown code fences or backticks.
+- Keep the same language as the original selection.
+- Preserve any HTML tags that were present in the selection (modify their content as instructed).
+- If the selection was plain text, return plain text. If it contained HTML, return HTML.
+- Match the tone, style, and formality of the original.
+- {{name}} placeholders MUST remain exactly as {{name}} — do not replace them.`;
+
+async function editWithAnthropic(selection: string, instruction: string): Promise<string> {
+  const client = new Anthropic();
+  const userMessage = `Original selection:\n---\n${selection}\n---\n\nInstruction: ${instruction}\n\nProvide only the replacement text.`;
+  const response = await client.messages.create({
+    model: "claude-sonnet-4-6",
+    max_tokens: 2048,
+    system: EDIT_SYSTEM_PROMPT,
+    messages: [{ role: "user", content: userMessage }],
+  });
+  const block = response.content[0];
+  return block.type === "text" ? block.text : "";
+}
+
+async function editWithGemini(selection: string, instruction: string): Promise<string> {
+  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
+  const userMessage = `Original selection:\n---\n${selection}\n---\n\nInstruction: ${instruction}\n\nProvide only the replacement text.`;
+  const response = await ai.models.generateContent({
+    model: "gemini-2.5-flash",
+    contents: `${EDIT_SYSTEM_PROMPT}\n\n${userMessage}`,
+  });
+  return response.text || "";
+}
+
+export async function editSelection(selection: string, instruction: string): Promise<string> {
+  const provider = getProvider();
+  const result = provider === "anthropic"
+    ? await editWithAnthropic(selection, instruction)
+    : await editWithGemini(selection, instruction);
+  // Strip any residual code fences just in case
+  return result
+    .replace(/^\s*```[a-zA-Z]*\s*\n?/, "")
+    .replace(/\n?\s*```\s*$/, "")
+    .trim();
+}
+
 export function getActiveProvider(): string {
   try {
     return getProvider();
