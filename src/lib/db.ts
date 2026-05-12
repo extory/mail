@@ -264,10 +264,18 @@ export function unsubscribeByEmail(email: string): boolean {
   return result.changes > 0;
 }
 
+function getOrCreateGroupByName(name: string): number {
+  const db = getDb();
+  const existing = db.prepare("SELECT id FROM groups WHERE name = ?").get(name) as { id: number } | undefined;
+  if (existing) return existing.id;
+  const result = db.prepare("INSERT INTO groups (name) VALUES (?)").run(name);
+  return Number(result.lastInsertRowid);
+}
+
 export function importSubscribers(
-  rows: { email: string; name?: string }[],
-  groupIds?: number[]
-): { imported: number; skipped: number } {
+  rows: { email: string; name?: string; groupNames?: string[] }[],
+  defaultGroupIds?: number[]
+): { imported: number; skipped: number; created_groups: number } {
   const db = getDb();
   const insertSub = db.prepare(
     "INSERT INTO subscribers (email, name) VALUES (?, ?) ON CONFLICT(email) DO NOTHING"
@@ -275,21 +283,64 @@ export function importSubscribers(
   const insertGroup = db.prepare(
     "INSERT OR IGNORE INTO subscriber_groups (subscriber_id, group_id) VALUES ((SELECT id FROM subscribers WHERE email = ?), ?)"
   );
+
+  // Pre-collect all distinct group names across rows so we resolve/create
+  // each name exactly once.
+  const uniqueNames = new Set<string>();
+  for (const row of rows) {
+    if (row.groupNames) {
+      for (const n of row.groupNames) {
+        const trimmed = n.trim();
+        if (trimmed) uniqueNames.add(trimmed);
+      }
+    }
+  }
+
   const transaction = db.transaction(() => {
     let imported = 0;
     let skipped = 0;
+    let createdGroups = 0;
+
+    // Resolve group names → ids (creating new groups as needed)
+    const nameToId = new Map<string, number>();
+    for (const name of uniqueNames) {
+      const existing = db.prepare("SELECT id FROM groups WHERE name = ?").get(name) as { id: number } | undefined;
+      if (existing) {
+        nameToId.set(name, existing.id);
+      } else {
+        const result = db.prepare("INSERT INTO groups (name) VALUES (?)").run(name);
+        nameToId.set(name, Number(result.lastInsertRowid));
+        createdGroups++;
+      }
+    }
+
     for (const row of rows) {
       const result = insertSub.run(row.email, row.name || null);
       if (result.changes > 0) imported++;
       else skipped++;
-      if (groupIds && groupIds.length > 0) {
-        for (const gid of groupIds) insertGroup.run(row.email, gid);
+
+      // Apply default group IDs (selected in UI before import)
+      if (defaultGroupIds && defaultGroupIds.length > 0) {
+        for (const gid of defaultGroupIds) insertGroup.run(row.email, gid);
+      }
+
+      // Apply per-row groups from CSV
+      if (row.groupNames) {
+        for (const name of row.groupNames) {
+          const trimmed = name.trim();
+          if (!trimmed) continue;
+          const gid = nameToId.get(trimmed);
+          if (gid) insertGroup.run(row.email, gid);
+        }
       }
     }
-    return { imported, skipped };
+    return { imported, skipped, created_groups: createdGroups };
   });
   return transaction();
 }
+
+// Exported for use elsewhere
+export { getOrCreateGroupByName };
 
 // --- Drafts ---
 

@@ -112,7 +112,11 @@ export function SubscriberTable() {
   };
 
   const handleDownloadTemplate = () => {
-    const csv = "email,name\nuser@example.com,John Doe\n";
+    const csv = `email,name,groups
+user@example.com,John Doe,VIP;Newsletter
+another@example.com,Jane,Newsletter
+plain@example.com,,
+`;
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");

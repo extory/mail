@@ -13,6 +13,9 @@ export function GroupManager() {
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [members, setMembers] = useState<Subscriber[]>([]);
   const [membersLoading, setMembersLoading] = useState(false);
+  const [addEmails, setAddEmails] = useState("");
+  const [adding, setAdding] = useState(false);
+  const [addResult, setAddResult] = useState<string | null>(null);
 
   const fetchGroups = async () => {
     const res = await fetch("/api/groups");
@@ -26,13 +29,60 @@ export function GroupManager() {
     if (expandedId === groupId) {
       setExpandedId(null);
       setMembers([]);
+      setAddEmails("");
+      setAddResult(null);
       return;
     }
     setExpandedId(groupId);
+    setAddEmails("");
+    setAddResult(null);
     setMembersLoading(true);
     const res = await fetch(`/api/subscribers?groupId=${groupId}`);
     setMembers(await res.json());
     setMembersLoading(false);
+  };
+
+  const handleAddToGroup = async (groupId: number) => {
+    const raw = addEmails.trim();
+    if (!raw) return;
+    // Split on commas, newlines, semicolons, or whitespace
+    const emails = raw
+      .split(/[\s,;\n]+/)
+      .map((e) => e.trim())
+      .filter((e) => e.includes("@"));
+    if (emails.length === 0) {
+      setAddResult(t("groups.no_valid_emails"));
+      return;
+    }
+
+    setAdding(true);
+    setAddResult(null);
+    let added = 0;
+    let failed = 0;
+
+    for (const email of emails) {
+      try {
+        const res = await fetch("/api/subscribers", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, groupIds: [groupId] }),
+        });
+        if (res.ok) added++;
+        else failed++;
+      } catch {
+        failed++;
+      }
+    }
+
+    setAddResult(t("groups.added_result", { added, failed }));
+    setAddEmails("");
+    setAdding(false);
+
+    // Refresh members and group counts
+    const res = await fetch(`/api/subscribers?groupId=${groupId}`);
+    setMembers(await res.json());
+    fetchGroups();
+    setTimeout(() => setAddResult(null), 4000);
   };
 
   const handleCreate = async (e: React.FormEvent) => {
@@ -161,6 +211,35 @@ export function GroupManager() {
                 {/* Expanded member list */}
                 {isExpanded && (
                   <div className="border-t border-border-light">
+                    {/* Add subscribers to this group */}
+                    <div className="p-5 bg-surface/50 border-b border-border-light" onClick={(e) => e.stopPropagation()}>
+                      <label className="block text-[12px] font-medium text-text-secondary mb-1.5">
+                        {t("groups.add_subscribers")}
+                      </label>
+                      <div className="flex gap-2 items-start">
+                        <textarea
+                          value={addEmails}
+                          onChange={(e) => setAddEmails(e.target.value)}
+                          placeholder={t("groups.add_subscribers_placeholder")}
+                          rows={2}
+                          disabled={adding}
+                          className="flex-1 border border-border rounded-lg px-3 py-2 text-[13px] bg-white focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand transition-all placeholder:text-text-muted resize-y"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleAddToGroup(group.id)}
+                          disabled={adding || !addEmails.trim()}
+                          className="bg-brand text-white px-4 py-2 rounded-lg text-[13px] font-medium hover:bg-brand-dark disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex-shrink-0"
+                        >
+                          {adding ? "..." : t("add")}
+                        </button>
+                      </div>
+                      <p className="text-[11px] text-text-muted mt-1.5">{t("groups.add_subscribers_hint")}</p>
+                      {addResult && (
+                        <p className="text-[12px] text-success font-medium mt-2">{addResult}</p>
+                      )}
+                    </div>
+
                     {membersLoading ? (
                       <p className="text-text-muted text-[13px] p-5">{t("loading")}</p>
                     ) : members.length === 0 ? (

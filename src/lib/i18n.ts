@@ -72,6 +72,11 @@ const translations = {
     "groups.no_groups": "No groups yet",
     "groups.count": "{count} subscriber(s)",
     "groups.delete_confirm": "Delete this group? Subscribers will not be deleted.",
+    "groups.add_subscribers": "Add subscribers to this group",
+    "groups.add_subscribers_placeholder": "Paste emails separated by commas, spaces, or new lines\nuser1@example.com\nuser2@example.com",
+    "groups.add_subscribers_hint": "Enter one or more emails. They'll be added to this group (new subscribers are created if needed).",
+    "groups.added_result": "Added {added}, failed {failed}",
+    "groups.no_valid_emails": "No valid emails found",
 
     // Compose
     "compose.title": "Compose Email",
@@ -259,6 +264,11 @@ const translations = {
     "groups.no_groups": "그룹이 없습니다",
     "groups.count": "구독자 {count}명",
     "groups.delete_confirm": "이 그룹을 삭제하시겠습니까? 구독자는 삭제되지 않습니다.",
+    "groups.add_subscribers": "이 그룹에 구독자 추가",
+    "groups.add_subscribers_placeholder": "쉼표, 공백 또는 줄바꿈으로 이메일을 구분하여 입력하세요\nuser1@example.com\nuser2@example.com",
+    "groups.add_subscribers_hint": "이메일을 입력하면 이 그룹에 추가됩니다. 기존 구독자가 아니면 새로 등록됩니다.",
+    "groups.added_result": "{added}명 추가, {failed}명 실패",
+    "groups.no_valid_emails": "유효한 이메일이 없습니다",
 
     // Compose
     "compose.title": "이메일 작성",
