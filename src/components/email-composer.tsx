@@ -56,6 +56,7 @@ export function EmailComposer() {
   const [showRevisions, setShowRevisions] = useState(false);
   const [activeRevisionId, setActiveRevisionId] = useState<number | null>(null);
   const lastSnapshotRef = useRef<string>("");
+  const [showSavePrompt, setShowSavePrompt] = useState(false);
 
   // Load draft if draftId in URL
   useEffect(() => {
@@ -219,6 +220,8 @@ export function EmailComposer() {
     } catch {
       // best-effort
     }
+    // Ask the user whether to keep this as a draft.
+    setShowSavePrompt(true);
   }, [prompt, useName, images, t, ensureDraftId, snapshotRevision]);
 
   const handleSave = async () => {
@@ -1005,6 +1008,52 @@ export function EmailComposer() {
         </div>
       )}
       </div>
+      )}
+
+      {/* Save draft prompt — appears once after each successful generation */}
+      {showSavePrompt && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm p-4"
+          onClick={() => setShowSavePrompt(false)}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-brand-light to-accent flex items-center justify-center mb-4">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+                <polyline points="17 21 17 13 7 13 7 21" />
+                <polyline points="7 3 7 8 15 8" />
+              </svg>
+            </div>
+            <h3 className="text-[16px] font-semibold text-text-primary mb-1">
+              {t("compose.save_prompt_title")}
+            </h3>
+            <p className="text-[13px] text-text-secondary leading-relaxed mb-5">
+              {t("compose.save_prompt_desc")}
+            </p>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setShowSavePrompt(false)}
+                disabled={saving}
+                className="flex-1 border border-border text-text-secondary px-4 h-10 rounded-lg text-[13px] font-medium hover:bg-surface hover:text-text-primary disabled:opacity-40 transition-colors"
+              >
+                {t("compose.save_prompt_dismiss")}
+              </button>
+              <button
+                onClick={async () => {
+                  await handleSave();
+                  setShowSavePrompt(false);
+                }}
+                disabled={saving}
+                className="flex-1 bg-brand text-white px-4 h-10 rounded-lg text-[13px] font-semibold hover:bg-brand-dark disabled:opacity-40 transition-colors flex items-center justify-center gap-1.5"
+              >
+                {saving ? "..." : t("compose.save_prompt_save")}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
