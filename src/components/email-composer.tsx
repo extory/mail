@@ -452,7 +452,10 @@ export function EmailComposer() {
   };
 
   const handleSend = async () => {
-    if (!subject || !htmlContent) return;
+    if (!subject || !htmlContent) {
+      setSendResult(`Error: ${!subject ? "subject" : "content"} is empty`);
+      return;
+    }
     setSending(true);
     setSendResult(null);
 
@@ -487,12 +490,21 @@ export function EmailComposer() {
       });
       const result = await res.json();
 
-      if (result.error) {
-        setSendResult(`Error: ${result.error}`);
+      const sentCount: number = Number(result?.success ?? 0);
+      const failedCount: number = Number(result?.failed ?? 0);
+      // Treat the request as a failure if the API returned an error message
+      // OR if zero recipients actually went out.
+      if (result.error || sentCount === 0) {
+        const reason = result.error
+          ? result.error
+          : failedCount > 0
+            ? t("compose.sent_failed_all", { failed: failedCount })
+            : t("compose.sent_none");
+        setSendResult(`Error: ${reason}`);
       } else {
-        let msg = t("compose.sent_result", { success: result.success });
-        if (result.failed > 0) {
-          msg += t("compose.sent_failed", { failed: result.failed });
+        let msg = t("compose.sent_result", { success: sentCount });
+        if (failedCount > 0) {
+          msg += t("compose.sent_failed", { failed: failedCount });
         }
         setSendResult(msg);
         // Ask whether to keep or clear the revision history for this draft.
