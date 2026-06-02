@@ -181,84 +181,96 @@ export function EmailComposer() {
       const reader = res.body?.getReader();
       if (!reader) throw new Error("No reader");
 
+      // Only strips fences when the text actually looks fenced. Avoids
+      // accidentally trimming legitimate content.
       const stripCodeFences = (text: string): string => {
-        // Remove leading ```html, ```, or ```anything and trailing ```
-        return text
-          .replace(/^\s*```[a-zA-Z]*\s*\n?/, "")
-          .replace(/\n?\s*```\s*$/, "")
-          .trim();
+        let out = text;
+        if (/^\s*```/.test(out)) {
+          out = out.replace(/^\s*```[a-zA-Z]*\s*\n?/, "");
+        }
+        if (/```\s*$/.test(out)) {
+          out = out.replace(/\n?\s*```\s*$/, "");
+        }
+        return out;
       };
 
-      // Split AI output into {subject, html}. Tolerant of missing or
-      // malformed "Subject:" prefixes — falls back to <title>, first
-      // heading text, or a short slice of the prompt.
+      // Split AI output into {subject, html}. Body is always returned —
+      // if a header is missing we keep the full text as html and pick a
+      // subject from <title>, the first heading, or the prompt.
       const splitSubjectAndHtml = (raw: string): { subject: string; html: string } => {
-        const cleaned = stripCodeFences(raw);
-        // Look for "Subject:" at the very start, possibly after a leading
-        // markdown fence (already stripped) or whitespace.
-        const subjectMatch = cleaned.match(/^[ \t]*subject:\s*([^\n\r]*)\r?\n+([\s\S]*)$/i);
-        if (subjectMatch) {
-          return { subject: subjectMatch[1].trim(), html: subjectMatch[2].trim() };
+        const cleaned = stripCodeFences(raw).trim();
+        const headerMatch = cleaned.match(/^[ \t]*subject:\s*([^\n\r]*)(?:\r?\n)+([\s\S]*)$/i);
+        if (headerMatch) {
+          const subj = headerMatch[1].trim();
+          const body = headerMatch[2];
+          // Safety: never lose the body to an over-aggressive match.
+          if (body.trim().length > 0) {
+            return { subject: subj, html: body };
+          }
         }
-        // No "Subject:" header — try other heuristics.
-        // 1. <title>...</title>
+        // No usable header — keep the full payload as html and derive
+        // a subject from the content.
         const titleMatch = cleaned.match(/<title[^>]*>([^<]+)<\/title>/i);
-        if (titleMatch) {
-          return { subject: titleMatch[1].trim(), html: cleaned };
-        }
-        // 2. First <h1>/<h2>/<h3>'s text
-        const headingMatch = cleaned.match(/<h[1-3][^>]*>\s*([\s\S]*?)<\/h[1-3]>/i);
+        if (titleMatch) return { subject: titleMatch[1].trim(), html: cleaned };
+        const headingMatch = cleaned.match(/<h[1-3][^>]*>([\s\S]*?)<\/h[1-3]>/i);
         if (headingMatch) {
-          const subj = headingMatch[1]
-            .replace(/<[^>]*>/g, "")
-            .replace(/\s+/g, " ")
-            .trim();
+          const subj = headingMatch[1].replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim();
           if (subj) return { subject: subj.slice(0, 120), html: cleaned };
         }
-        // 3. Fall back to a short slice of the prompt.
-        const fallback = prompt
-          .replace(/[\r\n]+/g, " ")
-          .replace(/\s+/g, " ")
-          .trim()
-          .slice(0, 80);
+        const fallback = prompt.replace(/\s+/g, " ").trim().slice(0, 80);
         return { subject: fallback, html: cleaned };
       };
 
       const decoder = new TextDecoder();
       let fullText = "";
-      let subjectExtracted = false;
+      let lastGoodHtml = "";
+      let lastFlushAt = 0;
+      const FLUSH_INTERVAL = 150; // ms — throttles preview re-renders during streaming
+
+      const flush = (force = false) => {
+        const now = Date.now();
+        if (!force && now - lastFlushAt < FLUSH_INTERVAL) return;
+        lastFlushAt = now;
+
+        const headerMatch = fullText.match(/^[ \t]*subject:\s*([^\n\r]*)(?:\r?\n)+([\s\S]*)$/i);
+        if (headerMatch) {
+          const newSubject = headerMatch[1].trim();
+          const newHtml = stripCodeFences(headerMatch[2]);
+          if (newSubject) setSubject(newSubject);
+          if (newHtml.length >= lastGoodHtml.length || newHtml.length > 0) {
+            setHtmlContent(newHtml);
+            lastGoodHtml = newHtml;
+          }
+        } else {
+          const newHtml = stripCodeFences(fullText);
+          if (newHtml.length >= lastGoodHtml.length || newHtml.length > 0) {
+            setHtmlContent(newHtml);
+            lastGoodHtml = newHtml;
+          }
+        }
+      };
 
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
         const chunk = decoder.decode(value);
         fullText += chunk;
-
-        // Progressive rendering: keep extracting subject + html as the
-        // text grows so the preview reflects the stream.
-        if (!subjectExtracted) {
-          const subjectMatch = fullText.match(/^[ \t]*subject:\s*([^\n\r]*)\r?\n+([\s\S]*)$/i);
-          if (subjectMatch) {
-            setSubject(subjectMatch[1].trim());
-            setHtmlContent(stripCodeFences(subjectMatch[2]));
-            subjectExtracted = true;
-            continue;
-          }
-        }
-        if (subjectExtracted) {
-          // After the header was seen, just keep updating the body
-          const subjectMatch = fullText.match(/^[ \t]*subject:\s*([^\n\r]*)\r?\n+([\s\S]*)$/i);
-          if (subjectMatch) setHtmlContent(stripCodeFences(subjectMatch[2]));
-        } else {
-          setHtmlContent(stripCodeFences(fullText));
-        }
+        flush();
       }
+      flush(true);
 
-      // Final pass: stream is complete — re-derive subject/html from the
-      // total payload so we recover from a missing "Subject:" header.
+      // Final reconciliation: only commit if the new split actually has
+      // a body. Otherwise keep whatever the stream produced.
       const finalSplit = splitSubjectAndHtml(fullText);
-      setSubject(finalSplit.subject);
-      setHtmlContent(finalSplit.html);
+      const finalHtml = finalSplit.html.trim();
+      if (finalHtml.length > 0) {
+        if (finalSplit.subject) setSubject(finalSplit.subject);
+        setHtmlContent(finalSplit.html);
+      } else if (lastGoodHtml.length > 0) {
+        // Keep the streaming snapshot — better than wiping the preview.
+        setHtmlContent(lastGoodHtml);
+        if (finalSplit.subject) setSubject(finalSplit.subject);
+      }
     } catch (err) {
       console.error(err);
       setSendResult(t("compose.error_generate"));
