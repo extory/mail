@@ -114,6 +114,20 @@ export function Sidebar() {
         </div>
       </div>
 
+      {/* Primary action: compose */}
+      <div className="px-3 mb-3">
+        <Link
+          href="/compose"
+          className="flex items-center justify-center gap-2 bg-gradient-to-r from-brand-light to-accent text-white h-10 rounded-lg text-[13px] font-semibold hover:opacity-95 shadow-sm shadow-brand/20 transition-all"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 20h9" />
+            <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+          </svg>
+          {t("compose.new")}
+        </Link>
+      </div>
+
       {/* Nav */}
       <nav className="flex-1 px-3 flex flex-col gap-0.5">
         {navItems.map((item) => {

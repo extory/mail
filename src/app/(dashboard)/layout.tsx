@@ -1,5 +1,6 @@
 import { Sidebar } from "@/components/sidebar";
 import { LocaleProvider } from "@/components/locale-provider";
+import { ComposeFab } from "@/components/compose-fab";
 
 export default function DashboardLayout({
   children,
@@ -11,6 +12,7 @@ export default function DashboardLayout({
       <div className="flex min-h-screen bg-surface text-text-primary">
         <Sidebar />
         <main className="flex-1 p-10 overflow-auto">{children}</main>
+        <ComposeFab />
       </div>
     </LocaleProvider>
   );

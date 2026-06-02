@@ -81,11 +81,22 @@ function getDb(): Database.Database {
         FOREIGN KEY (subscriber_id) REFERENCES subscribers(id) ON DELETE CASCADE,
         FOREIGN KEY (group_id) REFERENCES groups(id) ON DELETE CASCADE
       );
+      CREATE TABLE IF NOT EXISTS draft_revisions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        draft_id INTEGER NOT NULL,
+        subject TEXT NOT NULL DEFAULT '',
+        html_content TEXT NOT NULL DEFAULT '',
+        prompt TEXT NOT NULL DEFAULT '',
+        label TEXT,
+        created_at TEXT DEFAULT (datetime('now')),
+        FOREIGN KEY (draft_id) REFERENCES drafts(id) ON DELETE CASCADE
+      );
       CREATE INDEX IF NOT EXISTS idx_sent_emails_send_log ON sent_emails(send_log_id);
       CREATE INDEX IF NOT EXISTS idx_sent_emails_resend_id ON sent_emails(resend_id);
       CREATE INDEX IF NOT EXISTS idx_email_events_resend_id ON email_events(resend_id);
       CREATE INDEX IF NOT EXISTS idx_subscriber_groups_group ON subscriber_groups(group_id);
       CREATE INDEX IF NOT EXISTS idx_subscriber_groups_subscriber ON subscriber_groups(subscriber_id);
+      CREATE INDEX IF NOT EXISTS idx_draft_revisions_draft ON draft_revisions(draft_id);
     `);
 
     // One-time migration: move legacy single group_id into join table
@@ -437,6 +448,55 @@ export function saveDraft(subject: string, htmlContent: string, prompt: string, 
 export function deleteDraft(id: number): void {
   const db = getDb();
   db.prepare("DELETE FROM drafts WHERE id = ?").run(id);
+}
+
+// --- Draft Revisions ---
+
+export interface DraftRevision {
+  id: number;
+  draft_id: number;
+  subject: string;
+  html_content: string;
+  prompt: string;
+  label: string | null;
+  created_at: string;
+}
+
+export function addDraftRevision(
+  draftId: number,
+  subject: string,
+  htmlContent: string,
+  prompt: string,
+  label?: string
+): DraftRevision {
+  const db = getDb();
+  const result = db
+    .prepare(
+      "INSERT INTO draft_revisions (draft_id, subject, html_content, prompt, label) VALUES (?, ?, ?, ?, ?)"
+    )
+    .run(draftId, subject, htmlContent, prompt, label || null);
+  return db
+    .prepare("SELECT * FROM draft_revisions WHERE id = ?")
+    .get(result.lastInsertRowid) as DraftRevision;
+}
+
+export function getDraftRevisions(draftId: number): DraftRevision[] {
+  const db = getDb();
+  return db
+    .prepare("SELECT * FROM draft_revisions WHERE draft_id = ? ORDER BY id DESC")
+    .all(draftId) as DraftRevision[];
+}
+
+export function getDraftRevision(id: number): DraftRevision | undefined {
+  const db = getDb();
+  return db
+    .prepare("SELECT * FROM draft_revisions WHERE id = ?")
+    .get(id) as DraftRevision | undefined;
+}
+
+export function deleteDraftRevision(id: number): void {
+  const db = getDb();
+  db.prepare("DELETE FROM draft_revisions WHERE id = ?").run(id);
 }
 
 // --- Users ---

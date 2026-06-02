@@ -42,6 +42,21 @@ export function EmailComposer() {
   const [imageLink, setImageLink] = useState("");
   const [embedMode, setEmbedMode] = useState<"url" | "cid">("url");
 
+  // Revisions
+  interface Revision {
+    id: number;
+    draft_id: number;
+    subject: string;
+    html_content: string;
+    prompt: string;
+    label: string | null;
+    created_at: string;
+  }
+  const [revisions, setRevisions] = useState<Revision[]>([]);
+  const [showRevisions, setShowRevisions] = useState(false);
+  const [activeRevisionId, setActiveRevisionId] = useState<number | null>(null);
+  const lastSnapshotRef = useRef<string>("");
+
   // Load draft if draftId in URL
   useEffect(() => {
     const id = searchParams.get("draft");
@@ -62,6 +77,68 @@ export function EmailComposer() {
   useEffect(() => {
     fetch("/api/groups").then((res) => res.json()).then(setGroups);
   }, []);
+
+  // Load revisions whenever draftId changes
+  const loadRevisions = useCallback(async (id: number) => {
+    try {
+      const res = await fetch(`/api/drafts/${id}/revisions`);
+      if (res.ok) setRevisions(await res.json());
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  useEffect(() => {
+    if (draftId !== null) loadRevisions(draftId);
+  }, [draftId, loadRevisions]);
+
+  // Snapshot the current draft state into the revisions table
+  const snapshotRevision = useCallback(
+    async (label?: string) => {
+      if (draftId === null) return;
+      if (!subject && !htmlContent) return;
+      const fingerprint = `${subject}|${htmlContent}`;
+      if (fingerprint === lastSnapshotRef.current) return;
+      lastSnapshotRef.current = fingerprint;
+      try {
+        const res = await fetch(`/api/drafts/${draftId}/revisions`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ subject, htmlContent, prompt, label }),
+        });
+        if (res.ok) {
+          const rev = await res.json();
+          setRevisions((prev) => [rev, ...prev]);
+        }
+      } catch {
+        // best-effort
+      }
+    },
+    [draftId, subject, htmlContent, prompt]
+  );
+
+  // Auto-save draft so revisions have something to attach to
+  const ensureDraftId = useCallback(async (): Promise<number | null> => {
+    if (draftId !== null) return draftId;
+    try {
+      const res = await fetch("/api/drafts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ subject, htmlContent, prompt }),
+      });
+      const draft = await res.json();
+      if (draft?.id) {
+        setDraftId(draft.id);
+        const url = new URL(window.location.href);
+        url.searchParams.set("draft", String(draft.id));
+        router.replace(url.pathname + url.search);
+        return draft.id;
+      }
+    } catch {
+      // ignore
+    }
+    return null;
+  }, [draftId, subject, htmlContent, prompt, router]);
 
   const handleGenerate = useCallback(async () => {
     if (!prompt.trim()) return;
@@ -131,7 +208,18 @@ export function EmailComposer() {
     } finally {
       setGenerating(false);
     }
-  }, [prompt, useName, images, t]);
+    // After generation completes, persist a revision so the user can revert.
+    try {
+      const id = await ensureDraftId();
+      if (id !== null) {
+        // Re-read latest state via a microtask delay since setHtmlContent above
+        // may not have flushed yet — snapshot uses current closure values.
+        setTimeout(() => snapshotRevision("generated"), 100);
+      }
+    } catch {
+      // best-effort
+    }
+  }, [prompt, useName, images, t, ensureDraftId, snapshotRevision]);
 
   const handleSave = async () => {
     setSaving(true);
@@ -194,6 +282,15 @@ export function EmailComposer() {
       }, "image/png", 0.95);
     });
   };
+
+  const restoreRevision = useCallback((rev: Revision) => {
+    setSubject(rev.subject);
+    setHtmlContent(rev.html_content);
+    if (rev.prompt) setPrompt(rev.prompt);
+    setActiveRevisionId(rev.id);
+    // Reset the fingerprint so the next change can snapshot again.
+    lastSnapshotRef.current = `${rev.subject}|${rev.html_content}`;
+  }, []);
 
   const normalizeLink = (url: string): string | null => {
     const trimmed = url.trim();
@@ -475,6 +572,8 @@ export function EmailComposer() {
       setSelectedText("");
       setSelectionRange(null);
       setEditInstruction("");
+      // Snapshot after partial edit so the user can roll back this change.
+      setTimeout(() => snapshotRevision("edited"), 100);
     } catch {
       setEditError(t("compose.edit_failed"));
     } finally {
@@ -491,8 +590,12 @@ export function EmailComposer() {
 
   const inputClass = "border border-border rounded-lg px-3 h-[38px] text-[13px] bg-white focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand transition-all placeholder:text-text-muted";
 
+  const hasOutput = Boolean(subject || htmlContent);
+
   return (
-    <div className="space-y-5">
+    <div className={`grid gap-5 ${hasOutput ? "lg:grid-cols-[minmax(360px,520px)_1fr]" : "lg:grid-cols-1"}`}>
+      {/* LEFT: Prompt + options */}
+      <div className="space-y-5">
       {/* Prompt input */}
       <div className="bg-surface-card border border-border rounded-xl p-5">
         <label className="block text-[12px] font-medium text-text-secondary mb-2">
@@ -502,7 +605,7 @@ export function EmailComposer() {
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
           placeholder={t("compose.prompt_placeholder")}
-          className="border border-border rounded-lg px-3 py-2.5 text-[13px] bg-white w-full min-h-[120px] resize-y focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand transition-all placeholder:text-text-muted"
+          className="border border-border rounded-lg px-3 py-2.5 text-[13px] bg-white w-full min-h-[240px] resize-y focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand transition-all placeholder:text-text-muted"
           disabled={generating}
         />
 
@@ -619,13 +722,33 @@ export function EmailComposer() {
           )}
         </div>
       </div>
+      </div>
+
+      {/* RIGHT: Subject + Preview + Send + Revisions */}
+      {hasOutput && (
+      <div className="space-y-5">
 
       {/* Subject line */}
       {(subject || htmlContent) && (
         <div className="bg-surface-card border border-border rounded-xl p-5">
-          <label className="block text-[12px] font-medium text-text-secondary mb-1.5">
-            {t("compose.subject")}
-          </label>
+          <div className="flex items-center justify-between mb-1.5">
+            <label className="block text-[12px] font-medium text-text-secondary">
+              {t("compose.subject")}
+            </label>
+            <button
+              type="button"
+              onClick={() => setShowRevisions(!showRevisions)}
+              className={`text-[12px] font-medium transition-colors flex items-center gap-1 ${
+                showRevisions ? "text-brand" : "text-text-muted hover:text-brand"
+              }`}
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="1 4 1 10 7 10" />
+                <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
+              </svg>
+              {t("compose.revisions")}{revisions.length > 0 ? ` (${revisions.length})` : ""}
+            </button>
+          </div>
           <input
             type="text"
             value={subject}
@@ -633,6 +756,54 @@ export function EmailComposer() {
             className={`${inputClass} w-full`}
             placeholder={t("compose.subject_placeholder")}
           />
+        </div>
+      )}
+
+      {/* Revisions panel */}
+      {showRevisions && hasOutput && (
+        <div className="bg-surface-card border border-brand/30 rounded-xl overflow-hidden">
+          <div className="flex items-center justify-between px-5 py-3 border-b border-border-light bg-surface">
+            <h3 className="text-[12px] font-medium text-text-secondary">{t("compose.revisions_title")}</h3>
+            <button
+              onClick={() => setShowRevisions(false)}
+              className="text-[12px] text-text-muted hover:text-text-primary font-medium transition-colors"
+            >
+              {t("close")}
+            </button>
+          </div>
+          {revisions.length === 0 ? (
+            <p className="text-[12px] text-text-muted p-5">{t("compose.revisions_empty")}</p>
+          ) : (
+            <ul className="max-h-[300px] overflow-y-auto divide-y divide-border-light">
+              {revisions.map((rev) => (
+                <li
+                  key={rev.id}
+                  className={`px-5 py-3 hover:bg-surface/50 transition-colors cursor-pointer ${
+                    activeRevisionId === rev.id ? "bg-brand/[0.04]" : ""
+                  }`}
+                  onClick={() => restoreRevision(rev)}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[13px] text-text-primary truncate">
+                        {rev.subject || t("drafts.no_subject")}
+                      </p>
+                      <p className="text-[11px] text-text-muted mt-0.5">
+                        {new Date(rev.created_at).toLocaleString()}
+                        {rev.label ? ` · ${rev.label}` : ""}
+                      </p>
+                    </div>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); restoreRevision(rev); }}
+                      className="text-brand hover:text-brand-dark text-[12px] font-medium flex-shrink-0 transition-colors"
+                    >
+                      {t("compose.restore")}
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       )}
 
@@ -832,6 +1003,8 @@ export function EmailComposer() {
             )}
           </div>
         </div>
+      )}
+      </div>
       )}
     </div>
   );
