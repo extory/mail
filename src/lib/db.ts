@@ -88,6 +88,7 @@ function getDb(): Database.Database {
         html_content TEXT NOT NULL DEFAULT '',
         prompt TEXT NOT NULL DEFAULT '',
         label TEXT,
+        note TEXT,
         created_at TEXT DEFAULT (datetime('now')),
         FOREIGN KEY (draft_id) REFERENCES drafts(id) ON DELETE CASCADE
       );
@@ -106,6 +107,12 @@ function getDb(): Database.Database {
         INSERT OR IGNORE INTO subscriber_groups (subscriber_id, group_id)
         SELECT id, group_id FROM subscribers WHERE group_id IS NOT NULL
       `);
+    }
+
+    // Migration: add note column to draft_revisions if missing
+    const cols = db.prepare("PRAGMA table_info(draft_revisions)").all() as { name: string }[];
+    if (!cols.some((c) => c.name === "note")) {
+      db.exec("ALTER TABLE draft_revisions ADD COLUMN note TEXT");
     }
   }
   return db;
@@ -461,6 +468,7 @@ export interface DraftRevision {
   html_content: string;
   prompt: string;
   label: string | null;
+  note: string | null;
   created_at: string;
 }
 
@@ -469,14 +477,15 @@ export function addDraftRevision(
   subject: string,
   htmlContent: string,
   prompt: string,
-  label?: string
+  label?: string,
+  note?: string
 ): DraftRevision {
   const db = getDb();
   const result = db
     .prepare(
-      "INSERT INTO draft_revisions (draft_id, subject, html_content, prompt, label) VALUES (?, ?, ?, ?, ?)"
+      "INSERT INTO draft_revisions (draft_id, subject, html_content, prompt, label, note) VALUES (?, ?, ?, ?, ?, ?)"
     )
-    .run(draftId, subject, htmlContent, prompt, label || null);
+    .run(draftId, subject, htmlContent, prompt, label || null, note || null);
   return db
     .prepare("SELECT * FROM draft_revisions WHERE id = ?")
     .get(result.lastInsertRowid) as DraftRevision;

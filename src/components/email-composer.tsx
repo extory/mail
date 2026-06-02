@@ -1,14 +1,26 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import type { Group } from "@/lib/types";
 import { useLocale } from "./locale-provider";
+import { htmlToPlainLines, diffLines, diffStats, type DiffLine } from "@/lib/diff";
 
 interface UploadedImage {
   url: string;
   filename: string;
   description: string;
+}
+
+interface Revision {
+  id: number;
+  draft_id: number;
+  subject: string;
+  html_content: string;
+  prompt: string;
+  label: string | null;
+  note: string | null;
+  created_at: string;
 }
 
 export function EmailComposer() {
@@ -43,18 +55,10 @@ export function EmailComposer() {
   const [embedMode, setEmbedMode] = useState<"url" | "cid">("url");
 
   // Revisions
-  interface Revision {
-    id: number;
-    draft_id: number;
-    subject: string;
-    html_content: string;
-    prompt: string;
-    label: string | null;
-    created_at: string;
-  }
   const [revisions, setRevisions] = useState<Revision[]>([]);
   const [showRevisions, setShowRevisions] = useState(false);
   const [activeRevisionId, setActiveRevisionId] = useState<number | null>(null);
+  const [expandedRevId, setExpandedRevId] = useState<number | null>(null);
   const lastSnapshotRef = useRef<string>("");
   const [showSavePrompt, setShowSavePrompt] = useState(false);
   const [hasManualChanges, setHasManualChanges] = useState(false);
@@ -101,7 +105,7 @@ export function EmailComposer() {
 
   // Snapshot the current draft state into the revisions table
   const snapshotRevision = useCallback(
-    async (label?: string) => {
+    async (label?: string, note?: string) => {
       if (draftId === null) return;
       if (!subject && !htmlContent) return;
       const fingerprint = `${subject}|${htmlContent}`;
@@ -111,7 +115,7 @@ export function EmailComposer() {
         const res = await fetch(`/api/drafts/${draftId}/revisions`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ subject, htmlContent, prompt, label }),
+          body: JSON.stringify({ subject, htmlContent, prompt, label, note }),
         });
         if (res.ok) {
           const rev = await res.json();
@@ -221,7 +225,7 @@ export function EmailComposer() {
       if (id !== null) {
         // Re-read latest state via a microtask delay since setHtmlContent above
         // may not have flushed yet — snapshot uses current closure values.
-        setTimeout(() => snapshotRevision("generated"), 100);
+        setTimeout(() => snapshotRevision("generated", prompt), 100);
       }
     } catch {
       // best-effort
@@ -633,11 +637,12 @@ export function EmailComposer() {
           htmlContent.substring(idx + selectedText.length);
         setHtmlContent(newContent);
       }
+      const usedInstruction = editInstruction;
       setSelectedText("");
       setSelectionRange(null);
       setEditInstruction("");
       // Snapshot after partial edit so the user can roll back this change.
-      setTimeout(() => snapshotRevision("edited"), 100);
+      setTimeout(() => snapshotRevision("edited", usedInstruction), 100);
     } catch {
       setEditError(t("compose.edit_failed"));
     } finally {
@@ -838,33 +843,19 @@ export function EmailComposer() {
           {revisions.length === 0 ? (
             <p className="text-[12px] text-text-muted p-5">{t("compose.revisions_empty")}</p>
           ) : (
-            <ul className="max-h-[300px] overflow-y-auto divide-y divide-border-light">
-              {revisions.map((rev) => (
-                <li
+            <ul className="max-h-[480px] overflow-y-auto divide-y divide-border-light">
+              {revisions.map((rev, i) => (
+                <RevisionItem
                   key={rev.id}
-                  className={`px-5 py-3 hover:bg-surface/50 transition-colors cursor-pointer ${
-                    activeRevisionId === rev.id ? "bg-brand/[0.04]" : ""
-                  }`}
-                  onClick={() => restoreRevision(rev)}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="min-w-0 flex-1">
-                      <p className="text-[13px] text-text-primary truncate">
-                        {rev.subject || t("drafts.no_subject")}
-                      </p>
-                      <p className="text-[11px] text-text-muted mt-0.5">
-                        {new Date(rev.created_at).toLocaleString()}
-                        {rev.label ? ` · ${rev.label}` : ""}
-                      </p>
-                    </div>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); restoreRevision(rev); }}
-                      className="text-brand hover:text-brand-dark text-[12px] font-medium flex-shrink-0 transition-colors"
-                    >
-                      {t("compose.restore")}
-                    </button>
-                  </div>
-                </li>
+                  rev={rev}
+                  // Compare against the previous (older) revision so the
+                  // diff shows what this revision introduced
+                  previous={revisions[i + 1] || null}
+                  active={activeRevisionId === rev.id}
+                  expanded={expandedRevId === rev.id}
+                  onToggle={() => setExpandedRevId(expandedRevId === rev.id ? null : rev.id)}
+                  onRestore={() => restoreRevision(rev)}
+                />
               ))}
             </ul>
           )}
@@ -1184,5 +1175,158 @@ export function EmailComposer() {
         </div>
       )}
     </div>
+  );
+}
+
+function RevisionItem({
+  rev,
+  previous,
+  active,
+  expanded,
+  onToggle,
+  onRestore,
+}: {
+  rev: Revision;
+  previous: Revision | null;
+  active: boolean;
+  expanded: boolean;
+  onToggle: () => void;
+  onRestore: () => void;
+}) {
+  const { t } = useLocale();
+
+  const kind = (() => {
+    switch (rev.label) {
+      case "generated":
+        return { text: t("compose.rev_kind_generated"), color: "bg-brand/10 text-brand" };
+      case "edited":
+        return { text: t("compose.rev_kind_edited"), color: "bg-[#a78bfa]/15 text-[#7c3aed]" };
+      case "manual":
+        return { text: t("compose.rev_kind_manual"), color: "bg-warning/15 text-warning" };
+      default:
+        return { text: t("compose.rev_kind_other"), color: "bg-surface text-text-secondary" };
+    }
+  })();
+
+  const diff: DiffLine[] = useMemo(() => {
+    const oldLines = previous ? htmlToPlainLines(previous.html_content) : [];
+    const newLines = htmlToPlainLines(rev.html_content);
+    return diffLines(oldLines, newLines);
+  }, [rev.html_content, previous]);
+
+  const stats = useMemo(() => diffStats(diff), [diff]);
+  const subjectChanged = previous ? previous.subject !== rev.subject : Boolean(rev.subject);
+
+  return (
+    <li className={`transition-colors ${active ? "bg-brand/[0.04]" : ""}`}>
+      {/* Header row — always visible */}
+      <div className="px-5 py-3 hover:bg-surface/40 cursor-pointer" onClick={onToggle}>
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className={`inline-flex items-center text-[10px] font-semibold px-2 py-0.5 rounded-full ${kind.color}`}>
+                {kind.text}
+              </span>
+              <p className="text-[13px] text-text-primary truncate min-w-0">
+                {rev.subject || t("drafts.no_subject")}
+              </p>
+            </div>
+            {rev.note && (
+              <p className="text-[12px] text-text-secondary mt-1 line-clamp-2 leading-snug">
+                <span className="text-text-muted">{t("compose.rev_note")}: </span>
+                {rev.note}
+              </p>
+            )}
+            <div className="flex items-center gap-3 mt-1.5 text-[11px] text-text-muted">
+              <span>{new Date(rev.created_at).toLocaleString()}</span>
+              {(stats.added > 0 || stats.removed > 0) && (
+                <span className="flex items-center gap-2">
+                  {stats.added > 0 && (
+                    <span className="text-[#00C950] font-medium">+{stats.added}</span>
+                  )}
+                  {stats.removed > 0 && (
+                    <span className="text-danger font-medium">−{stats.removed}</span>
+                  )}
+                </span>
+              )}
+              {subjectChanged && (
+                <span className="text-warning">{t("compose.rev_subject_changed")}</span>
+              )}
+            </div>
+          </div>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <button
+              onClick={(e) => { e.stopPropagation(); onRestore(); }}
+              className="text-brand hover:text-brand-dark text-[12px] font-medium transition-colors"
+            >
+              {t("compose.restore")}
+            </button>
+            <svg
+              width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+              className={`text-text-muted transition-transform ${expanded ? "rotate-180" : ""}`}
+            >
+              <polyline points="6 9 12 15 18 9" />
+            </svg>
+          </div>
+        </div>
+      </div>
+
+      {/* Expanded diff */}
+      {expanded && (
+        <div className="border-t border-border-light bg-white">
+          {/* Subject change */}
+          {subjectChanged && (
+            <div className="px-5 py-2.5 border-b border-border-light bg-surface/40">
+              <p className="text-[11px] font-medium text-text-muted mb-1">
+                {t("compose.rev_subject_label")}
+              </p>
+              {previous && (
+                <p className="text-[12px] text-danger line-through truncate">
+                  {previous.subject || <em className="text-text-muted">{t("drafts.no_subject")}</em>}
+                </p>
+              )}
+              <p className="text-[12px] text-[#00C950] font-medium truncate">
+                {rev.subject || <em className="text-text-muted">{t("drafts.no_subject")}</em>}
+              </p>
+            </div>
+          )}
+          {/* HTML diff */}
+          <div className="max-h-[280px] overflow-y-auto px-5 py-3 text-[12px] font-mono leading-relaxed">
+            {diff.length === 0 ? (
+              <p className="text-text-muted italic">{t("compose.rev_no_changes")}</p>
+            ) : (
+              <pre className="whitespace-pre-wrap break-words">
+                {diff.map((line, idx) => (
+                  <div
+                    key={idx}
+                    className={
+                      line.kind === "added"
+                        ? "bg-[#00C950]/[0.08] text-[#0a7a36] px-2 -mx-2"
+                        : line.kind === "removed"
+                          ? "bg-danger/[0.08] text-danger px-2 -mx-2"
+                          : "text-text-muted px-2 -mx-2"
+                    }
+                  >
+                    <span className="select-none w-4 inline-block">
+                      {line.kind === "added" ? "+" : line.kind === "removed" ? "−" : " "}
+                    </span>
+                    {line.text}
+                  </div>
+                ))}
+              </pre>
+            )}
+          </div>
+          {/* Prompt for this revision */}
+          {rev.prompt && (
+            <div className="px-5 py-2.5 border-t border-border-light bg-surface/40">
+              <p className="text-[11px] font-medium text-text-muted mb-0.5">
+                {t("compose.rev_prompt_label")}
+              </p>
+              <p className="text-[12px] text-text-secondary leading-snug">{rev.prompt}</p>
+            </div>
+          )}
+        </div>
+      )}
+    </li>
   );
 }

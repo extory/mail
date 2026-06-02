@@ -36,7 +36,8 @@ export async function POST(
     typeof body.subject === "string" ? body.subject : "",
     typeof body.htmlContent === "string" ? body.htmlContent : "",
     typeof body.prompt === "string" ? body.prompt : "",
-    typeof body.label === "string" ? body.label : undefined
+    typeof body.label === "string" ? body.label : undefined,
+    typeof body.note === "string" ? body.note : undefined
   );
   return Response.json(revision);
 }
