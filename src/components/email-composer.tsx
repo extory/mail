@@ -57,6 +57,12 @@ export function EmailComposer() {
   const [activeRevisionId, setActiveRevisionId] = useState<number | null>(null);
   const lastSnapshotRef = useRef<string>("");
   const [showSavePrompt, setShowSavePrompt] = useState(false);
+  const [hasManualChanges, setHasManualChanges] = useState(false);
+  const [savingRevision, setSavingRevision] = useState(false);
+  const [showSendKeepPrompt, setShowSendKeepPrompt] = useState(false);
+  const [postSendLoading, setPostSendLoading] = useState(false);
+  // Pending send arguments cached while the keep/clear dialog is open
+  const sendArgsRef = useRef<{ groupId?: number; finalHtml: string } | null>(null);
 
   // Load draft if draftId in URL
   useEffect(() => {
@@ -293,7 +299,32 @@ export function EmailComposer() {
     setActiveRevisionId(rev.id);
     // Reset the fingerprint so the next change can snapshot again.
     lastSnapshotRef.current = `${rev.subject}|${rev.html_content}`;
+    setHasManualChanges(false);
   }, []);
+
+  // Track manual edits — whenever subject/html diverges from the last snapshot
+  useEffect(() => {
+    if (!subject && !htmlContent) {
+      setHasManualChanges(false);
+      return;
+    }
+    const fingerprint = `${subject}|${htmlContent}`;
+    setHasManualChanges(fingerprint !== lastSnapshotRef.current);
+  }, [subject, htmlContent]);
+
+  const saveRevisionManually = useCallback(async () => {
+    if (savingRevision || generating) return;
+    setSavingRevision(true);
+    try {
+      const id = await ensureDraftId();
+      if (id !== null) {
+        await snapshotRevision("manual");
+        setHasManualChanges(false);
+      }
+    } finally {
+      setSavingRevision(false);
+    }
+  }, [ensureDraftId, snapshotRevision, savingRevision, generating]);
 
   const normalizeLink = (url: string): string | null => {
     const trimmed = url.trim();
@@ -369,12 +400,42 @@ export function EmailComposer() {
           msg += t("compose.sent_failed", { failed: result.failed });
         }
         setSendResult(msg);
+        // Ask whether to keep or clear the revision history for this draft.
+        if (draftId !== null) setShowSendKeepPrompt(true);
       }
     } catch {
       setSendResult(t("compose.error_send"));
     } finally {
       setSending(false);
     }
+  };
+
+  const handleClearRevisions = async () => {
+    if (draftId === null) {
+      setShowSendKeepPrompt(false);
+      return;
+    }
+    setPostSendLoading(true);
+    try {
+      // Delete the draft entirely — revisions cascade-delete via FK
+      await fetch(`/api/drafts/${draftId}`, { method: "DELETE" });
+      setRevisions([]);
+      setDraftId(null);
+      setActiveRevisionId(null);
+      // Clear the draft id from the URL so a fresh compose starts next time
+      const url = new URL(window.location.href);
+      url.searchParams.delete("draft");
+      router.replace(url.pathname + (url.search || ""));
+    } catch {
+      // ignore
+    } finally {
+      setPostSendLoading(false);
+      setShowSendKeepPrompt(false);
+    }
+  };
+
+  const handleKeepRevisions = () => {
+    setShowSendKeepPrompt(false);
   };
 
   const MAX_UPLOAD_SIZE = 4.5 * 1024 * 1024; // 4.5MB to be safe under 5MB limit
@@ -813,14 +874,40 @@ export function EmailComposer() {
       {/* Preview */}
       {htmlContent && (
         <div className="bg-surface-card border border-border rounded-xl overflow-hidden">
-          <div className="flex items-center justify-between px-5 py-3 border-b border-border-light bg-surface">
-            <h3 className="text-[12px] font-medium text-text-secondary">{t("compose.preview")}</h3>
-            <button
-              onClick={() => setShowHtml(!showHtml)}
-              className="text-[12px] text-text-muted hover:text-brand font-medium transition-colors"
-            >
-              {showHtml ? t("compose.visual_preview") : t("compose.view_html")}
-            </button>
+          <div className="flex items-center justify-between px-5 py-3 border-b border-border-light bg-surface gap-3">
+            <div className="flex items-center gap-2 min-w-0">
+              <h3 className="text-[12px] font-medium text-text-secondary flex-shrink-0">{t("compose.preview")}</h3>
+              {hasManualChanges && (
+                <span className="inline-flex items-center gap-1 text-[11px] text-warning font-medium flex-shrink-0">
+                  <span className="w-1.5 h-1.5 rounded-full bg-warning" />
+                  {t("compose.unsaved_changes")}
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-3 flex-shrink-0">
+              <button
+                onClick={saveRevisionManually}
+                disabled={!hasManualChanges || savingRevision}
+                className={`text-[12px] font-medium transition-colors flex items-center gap-1 ${
+                  hasManualChanges
+                    ? "text-brand hover:text-brand-dark"
+                    : "text-text-muted/50 cursor-not-allowed"
+                }`}
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+                  <polyline points="17 21 17 13 7 13 7 21" />
+                  <polyline points="7 3 7 8 15 8" />
+                </svg>
+                {savingRevision ? "..." : t("compose.save_as_revision")}
+              </button>
+              <button
+                onClick={() => setShowHtml(!showHtml)}
+                className="text-[12px] text-text-muted hover:text-brand font-medium transition-colors"
+              >
+                {showHtml ? t("compose.visual_preview") : t("compose.view_html")}
+              </button>
+            </div>
           </div>
 
           {showHtml ? (
@@ -1050,6 +1137,47 @@ export function EmailComposer() {
                 className="flex-1 bg-brand text-white px-4 h-10 rounded-lg text-[13px] font-semibold hover:bg-brand-dark disabled:opacity-40 transition-colors flex items-center justify-center gap-1.5"
               >
                 {saving ? "..." : t("compose.save_prompt_save")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Post-send: keep or clear the revision history */}
+      {showSendKeepPrompt && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm p-4"
+          onClick={() => !postSendLoading && handleKeepRevisions()}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="w-10 h-10 rounded-lg bg-success/10 flex items-center justify-center mb-4">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#00C950" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="20 6 9 17 4 12" />
+              </svg>
+            </div>
+            <h3 className="text-[16px] font-semibold text-text-primary mb-1">
+              {t("compose.post_send_title")}
+            </h3>
+            <p className="text-[13px] text-text-secondary leading-relaxed mb-5">
+              {t("compose.post_send_desc", { count: revisions.length })}
+            </p>
+            <div className="flex gap-2">
+              <button
+                onClick={handleClearRevisions}
+                disabled={postSendLoading}
+                className="flex-1 border border-border text-text-secondary px-4 h-10 rounded-lg text-[13px] font-medium hover:bg-danger/[0.06] hover:text-danger hover:border-danger/30 disabled:opacity-40 transition-colors"
+              >
+                {postSendLoading ? "..." : t("compose.post_send_clear")}
+              </button>
+              <button
+                onClick={handleKeepRevisions}
+                disabled={postSendLoading}
+                className="flex-1 bg-brand text-white px-4 h-10 rounded-lg text-[13px] font-semibold hover:bg-brand-dark disabled:opacity-40 transition-colors"
+              >
+                {t("compose.post_send_keep")}
               </button>
             </div>
           </div>
