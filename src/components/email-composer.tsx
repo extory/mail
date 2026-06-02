@@ -72,22 +72,27 @@ export function EmailComposer() {
   // Pending send arguments cached while the keep/clear dialog is open
   const sendArgsRef = useRef<{ groupId?: number; finalHtml: string } | null>(null);
 
-  // Load draft if draftId in URL
+  // Load draft from URL only on first mount. After that, we don't want
+  // URL changes (e.g. from ensureDraftId writing the new id) to clobber
+  // the working subject/html the user is editing.
+  const initialDraftLoadDone = useRef(false);
   useEffect(() => {
+    if (initialDraftLoadDone.current) return;
+    initialDraftLoadDone.current = true;
     const id = searchParams.get("draft");
-    if (id) {
-      fetch(`/api/drafts/${id}`)
-        .then((res) => res.json())
-        .then((draft) => {
-          if (!draft.error) {
-            setDraftId(draft.id);
-            setPrompt(draft.prompt || "");
-            setSubject(draft.subject || "");
-            setHtmlContent(draft.html_content || "");
-          }
-        });
-    }
-  }, [searchParams]);
+    if (!id) return;
+    fetch(`/api/drafts/${id}`)
+      .then((res) => res.json())
+      .then((draft) => {
+        if (!draft.error) {
+          setDraftId(draft.id);
+          setPrompt(draft.prompt || "");
+          setSubject(draft.subject || "");
+          setHtmlContent(draft.html_content || "");
+        }
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     fetch("/api/groups").then((res) => res.json()).then(setGroups);
@@ -133,27 +138,39 @@ export function EmailComposer() {
   );
 
   // Auto-save draft so revisions have something to attach to
-  const ensureDraftId = useCallback(async (): Promise<number | null> => {
-    if (draftId !== null) return draftId;
-    try {
-      const res = await fetch("/api/drafts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ subject, htmlContent, prompt }),
-      });
-      const draft = await res.json();
-      if (draft?.id) {
-        setDraftId(draft.id);
-        const url = new URL(window.location.href);
-        url.searchParams.set("draft", String(draft.id));
-        router.replace(url.pathname + url.search);
-        return draft.id;
+  // Accepts the latest payload directly so callers don't depend on a
+  // closure capture that may be stale (e.g. when called immediately
+  // after a setState).
+  const ensureDraftId = useCallback(
+    async (override?: { subject?: string; htmlContent?: string; prompt?: string }): Promise<number | null> => {
+      if (draftId !== null) return draftId;
+      try {
+        const payload = {
+          subject: override?.subject ?? subject,
+          htmlContent: override?.htmlContent ?? htmlContent,
+          prompt: override?.prompt ?? prompt,
+        };
+        const res = await fetch("/api/drafts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const draft = await res.json();
+        if (draft?.id) {
+          setDraftId(draft.id);
+          // Update URL silently without firing the draft-loader effect.
+          const url = new URL(window.location.href);
+          url.searchParams.set("draft", String(draft.id));
+          window.history.replaceState(window.history.state, "", url.pathname + url.search);
+          return draft.id;
+        }
+      } catch {
+        // ignore
       }
-    } catch {
-      // ignore
-    }
-    return null;
-  }, [draftId, subject, htmlContent, prompt, router]);
+      return null;
+    },
+    [draftId, subject, htmlContent, prompt]
+  );
 
   const handleGenerate = useCallback(async () => {
     if (!prompt.trim()) return;
@@ -262,14 +279,30 @@ export function EmailComposer() {
       // Final reconciliation: only commit if the new split actually has
       // a body. Otherwise keep whatever the stream produced.
       const finalSplit = splitSubjectAndHtml(fullText);
-      const finalHtml = finalSplit.html.trim();
-      if (finalHtml.length > 0) {
-        if (finalSplit.subject) setSubject(finalSplit.subject);
-        setHtmlContent(finalSplit.html);
-      } else if (lastGoodHtml.length > 0) {
-        // Keep the streaming snapshot — better than wiping the preview.
-        setHtmlContent(lastGoodHtml);
-        if (finalSplit.subject) setSubject(finalSplit.subject);
+      let finalSubject = finalSplit.subject;
+      let finalHtmlOut = finalSplit.html;
+      if (finalHtmlOut.trim().length === 0 && lastGoodHtml.length > 0) {
+        finalHtmlOut = lastGoodHtml;
+      }
+      if (finalSubject) setSubject(finalSubject);
+      else finalSubject = "";
+      if (finalHtmlOut.trim().length > 0) setHtmlContent(finalHtmlOut);
+
+      // Persist a revision so the user can revert. Pass the freshly
+      // computed values so we don't depend on React having flushed
+      // the setState calls above.
+      try {
+        const id = await ensureDraftId({
+          subject: finalSubject,
+          htmlContent: finalHtmlOut,
+          prompt,
+        });
+        if (id !== null) {
+          pendingSnapshotRef.current = { label: "generated", note: prompt };
+          setSnapshotTick((n) => n + 1);
+        }
+      } catch {
+        // best-effort
       }
     } catch (err) {
       console.error(err);
@@ -277,21 +310,9 @@ export function EmailComposer() {
     } finally {
       setGenerating(false);
     }
-    // After generation completes, persist a revision so the user can revert.
-    try {
-      const id = await ensureDraftId();
-      if (id !== null) {
-        // Queue a snapshot — useEffect will run it after the state updates
-        // above have flushed, so subject/html are guaranteed current.
-        pendingSnapshotRef.current = { label: "generated", note: prompt };
-        setSnapshotTick((n) => n + 1);
-      }
-    } catch {
-      // best-effort
-    }
     // Ask the user whether to keep this as a draft.
     setShowSavePrompt(true);
-  }, [prompt, useName, images, t, ensureDraftId, snapshotRevision]);
+  }, [prompt, useName, images, t, ensureDraftId]);
 
   const handleSave = async () => {
     setSaving(true);
