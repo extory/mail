@@ -32,6 +32,7 @@ const IMAGE_ADDITION = (images: ImageInput[]) => `
 - Use inline styles on every <img>: style="max-width:100%; height:auto; display:block; margin: 20px auto; border-radius: 8px;"
 - Wrap each image in a container with appropriate spacing. You may add a <figcaption>-style caption based on the description if it adds value.
 - The email body must meaningfully reference or describe the content of the images — do not just attach them without context.
+- REMINDER: Even with images, the very first line of your output MUST still be "Subject: <subject>" followed by a blank line, then the HTML. Do not skip the subject line.
 
 Images provided:
 ${images.map((img, i) => `  [Image ${i + 1}]
@@ -141,7 +142,8 @@ Rules:
 - Do NOT include any preamble, explanation, or surrounding context.
 - Do NOT wrap output in markdown code fences or backticks.
 - Keep the same language as the original selection.
-- Preserve any HTML tags that were present in the selection (modify their content as instructed).
+- Preserve ALL HTML tags that were present in the selection. <img>, <a>, <table>, <tr>, <td>, <br>, <hr>, inline style attributes, and existing CSS must be kept EXACTLY as in the original. If the instruction is about text, modify only text content between tags.
+- If the selection contains <img> tags, the same <img> tags (same src, alt, style, etc.) MUST appear in your output. Do not drop, replace, or rewrite the src URL.
 - If the selection was plain text, return plain text. If it contained HTML, return HTML.
 - Match the tone, style, and formality of the original.
 - {{name}} placeholders MUST remain exactly as {{name}} — do not replace them.`;

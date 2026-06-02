@@ -60,6 +60,10 @@ export function EmailComposer() {
   const [activeRevisionId, setActiveRevisionId] = useState<number | null>(null);
   const [expandedRevId, setExpandedRevId] = useState<number | null>(null);
   const lastSnapshotRef = useRef<string>("");
+  // Pending snapshot signal — consumed by an effect that fires after the
+  // related state updates have flushed.
+  const pendingSnapshotRef = useRef<{ label: string; note?: string } | null>(null);
+  const [snapshotTick, setSnapshotTick] = useState(0);
   const [showSavePrompt, setShowSavePrompt] = useState(false);
   const [hasManualChanges, setHasManualChanges] = useState(false);
   const [savingRevision, setSavingRevision] = useState(false);
@@ -185,6 +189,41 @@ export function EmailComposer() {
           .trim();
       };
 
+      // Split AI output into {subject, html}. Tolerant of missing or
+      // malformed "Subject:" prefixes — falls back to <title>, first
+      // heading text, or a short slice of the prompt.
+      const splitSubjectAndHtml = (raw: string): { subject: string; html: string } => {
+        const cleaned = stripCodeFences(raw);
+        // Look for "Subject:" at the very start, possibly after a leading
+        // markdown fence (already stripped) or whitespace.
+        const subjectMatch = cleaned.match(/^[ \t]*subject:\s*([^\n\r]*)\r?\n+([\s\S]*)$/i);
+        if (subjectMatch) {
+          return { subject: subjectMatch[1].trim(), html: subjectMatch[2].trim() };
+        }
+        // No "Subject:" header — try other heuristics.
+        // 1. <title>...</title>
+        const titleMatch = cleaned.match(/<title[^>]*>([^<]+)<\/title>/i);
+        if (titleMatch) {
+          return { subject: titleMatch[1].trim(), html: cleaned };
+        }
+        // 2. First <h1>/<h2>/<h3>'s text
+        const headingMatch = cleaned.match(/<h[1-3][^>]*>\s*([\s\S]*?)<\/h[1-3]>/i);
+        if (headingMatch) {
+          const subj = headingMatch[1]
+            .replace(/<[^>]*>/g, "")
+            .replace(/\s+/g, " ")
+            .trim();
+          if (subj) return { subject: subj.slice(0, 120), html: cleaned };
+        }
+        // 3. Fall back to a short slice of the prompt.
+        const fallback = prompt
+          .replace(/[\r\n]+/g, " ")
+          .replace(/\s+/g, " ")
+          .trim()
+          .slice(0, 80);
+        return { subject: fallback, html: cleaned };
+      };
+
       const decoder = new TextDecoder();
       let fullText = "";
       let subjectExtracted = false;
@@ -195,24 +234,31 @@ export function EmailComposer() {
         const chunk = decoder.decode(value);
         fullText += chunk;
 
-        if (!subjectExtracted && fullText.includes("\n")) {
-          const firstLine = fullText.split("\n")[0];
-          if (firstLine.toLowerCase().startsWith("subject:")) {
-            setSubject(firstLine.replace(/^subject:\s*/i, "").trim());
+        // Progressive rendering: keep extracting subject + html as the
+        // text grows so the preview reflects the stream.
+        if (!subjectExtracted) {
+          const subjectMatch = fullText.match(/^[ \t]*subject:\s*([^\n\r]*)\r?\n+([\s\S]*)$/i);
+          if (subjectMatch) {
+            setSubject(subjectMatch[1].trim());
+            setHtmlContent(stripCodeFences(subjectMatch[2]));
             subjectExtracted = true;
-            const rest = fullText.substring(fullText.indexOf("\n") + 1).replace(/^\n+/, "");
-            setHtmlContent(stripCodeFences(rest));
             continue;
           }
         }
-
         if (subjectExtracted) {
-          const rest = fullText.substring(fullText.indexOf("\n") + 1).replace(/^\n+/, "");
-          setHtmlContent(stripCodeFences(rest));
+          // After the header was seen, just keep updating the body
+          const subjectMatch = fullText.match(/^[ \t]*subject:\s*([^\n\r]*)\r?\n+([\s\S]*)$/i);
+          if (subjectMatch) setHtmlContent(stripCodeFences(subjectMatch[2]));
         } else {
           setHtmlContent(stripCodeFences(fullText));
         }
       }
+
+      // Final pass: stream is complete — re-derive subject/html from the
+      // total payload so we recover from a missing "Subject:" header.
+      const finalSplit = splitSubjectAndHtml(fullText);
+      setSubject(finalSplit.subject);
+      setHtmlContent(finalSplit.html);
     } catch (err) {
       console.error(err);
       setSendResult(t("compose.error_generate"));
@@ -223,9 +269,10 @@ export function EmailComposer() {
     try {
       const id = await ensureDraftId();
       if (id !== null) {
-        // Re-read latest state via a microtask delay since setHtmlContent above
-        // may not have flushed yet — snapshot uses current closure values.
-        setTimeout(() => snapshotRevision("generated", prompt), 100);
+        // Queue a snapshot — useEffect will run it after the state updates
+        // above have flushed, so subject/html are guaranteed current.
+        pendingSnapshotRef.current = { label: "generated", note: prompt };
+        setSnapshotTick((n) => n + 1);
       }
     } catch {
       // best-effort
@@ -305,6 +352,17 @@ export function EmailComposer() {
     lastSnapshotRef.current = `${rev.subject}|${rev.html_content}`;
     setHasManualChanges(false);
   }, []);
+
+  // Process any pending snapshot once state has settled
+  useEffect(() => {
+    if (snapshotTick === 0) return;
+    const pending = pendingSnapshotRef.current;
+    if (!pending) return;
+    pendingSnapshotRef.current = null;
+    // Run on the next microtask so React has flushed both the setSubject
+    // and setHtmlContent calls that immediately preceded the tick bump.
+    Promise.resolve().then(() => snapshotRevision(pending.label, pending.note));
+  }, [snapshotTick, snapshotRevision]);
 
   // Track manual edits — whenever subject/html diverges from the last snapshot
   useEffect(() => {
@@ -616,12 +674,36 @@ export function EmailComposer() {
         setEditError(data.error);
         return;
       }
+
+      // Defensive: preserve any <img> tags from the original selection that
+      // the AI dropped. Match them by src so we don't double-insert when the
+      // model legitimately kept them.
+      let replacement: string = data.result;
+      const originalImgTags = Array.from(
+        selectedText.matchAll(/<img\b[^>]*>/gi)
+      ).map((m) => m[0]);
+      if (originalImgTags.length > 0) {
+        const replacementSrcs = new Set(
+          Array.from(replacement.matchAll(/<img\b[^>]*\bsrc\s*=\s*["']([^"']+)["']/gi)).map((m) => m[1])
+        );
+        const missing = originalImgTags.filter((tag) => {
+          const srcMatch = tag.match(/\bsrc\s*=\s*["']([^"']+)["']/i);
+          if (!srcMatch) return true;
+          return !replacementSrcs.has(srcMatch[1]);
+        });
+        if (missing.length > 0) {
+          // Append missing images at the end of the replacement so they are
+          // not lost. Wrap each in a div so they render predictably.
+          replacement = replacement + "\n" + missing.join("\n");
+        }
+      }
+
       // Replace selected text in htmlContent
       if (selectionRange) {
         // textarea-based: exact replacement by index
         const newContent =
           htmlContent.substring(0, selectionRange.start) +
-          data.result +
+          replacement +
           htmlContent.substring(selectionRange.end);
         setHtmlContent(newContent);
       } else {
@@ -633,7 +715,7 @@ export function EmailComposer() {
         }
         const newContent =
           htmlContent.substring(0, idx) +
-          data.result +
+          replacement +
           htmlContent.substring(idx + selectedText.length);
         setHtmlContent(newContent);
       }
@@ -641,8 +723,9 @@ export function EmailComposer() {
       setSelectedText("");
       setSelectionRange(null);
       setEditInstruction("");
-      // Snapshot after partial edit so the user can roll back this change.
-      setTimeout(() => snapshotRevision("edited", usedInstruction), 100);
+      // Queue snapshot after the htmlContent update flushes.
+      pendingSnapshotRef.current = { label: "edited", note: usedInstruction };
+      setSnapshotTick((n) => n + 1);
     } catch {
       setEditError(t("compose.edit_failed"));
     } finally {
