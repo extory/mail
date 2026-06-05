@@ -1,6 +1,9 @@
 import { NextRequest } from "next/server";
-import { getSubscribers, addSendLog } from "@/lib/db";
+import { getSubscribers, addSendLog, saveSentEmail } from "@/lib/db";
 import { sendBulkEmails } from "@/lib/resend";
+import Database from "better-sqlite3";
+import path from "path";
+import { randomBytes } from "crypto";
 
 export async function POST(request: NextRequest) {
   const { subject, htmlContent, prompt, groupId, embedImages } = await request.json();
@@ -37,7 +40,7 @@ export async function POST(request: NextRequest) {
 
   console.log(`[send] sendLog=${sendLog.id} success=${result.success} failed=${result.failed} error=${result.error ?? "none"}`);
 
-  // Update send log status
+  // Update send log status + recipient_count
   const status =
     result.failed === 0
       ? "sent"
@@ -45,13 +48,45 @@ export async function POST(request: NextRequest) {
         ? "failed"
         : "partial";
 
-  // Update the status in DB
-  const Database = await import("better-sqlite3");
-  const path = await import("path");
-  const db = new Database.default(path.join(process.cwd(), "data", "mail.db"));
-  db.prepare("UPDATE send_log SET status = ?, recipient_count = ? WHERE id = ?")
-    .run(status, result.success, sendLog.id);
-  db.close();
+  const dbPath = path.join(process.cwd(), "data", "mail.db");
+  const db = new Database(dbPath);
+  try {
+    db.prepare("UPDATE send_log SET status = ?, recipient_count = ? WHERE id = ?")
+      .run(status, result.success, sendLog.id);
+
+    // Stats safety net: if sendBulkEmails reported successes but no rows
+    // were written to sent_emails (Resend response shape we don't recognise,
+    // or batch returned without ids), seed placeholder rows so the
+    // statistics page at least shows how many emails went out. Placeholder
+    // ids start with "local-" so they're easy to identify and won't collide
+    // with real Resend ids.
+    const row = db.prepare(
+      "SELECT COUNT(*) as c FROM sent_emails WHERE send_log_id = ?"
+    ).get(sendLog.id) as { c: number };
+    const stored = row?.c ?? 0;
+    if (stored < result.success) {
+      const missing = result.success - stored;
+      console.warn(
+        `[send] sendLog=${sendLog.id}: only ${stored}/${result.success} email IDs stored. Seeding ${missing} placeholders.`
+      );
+      // Find which recipients are missing (those not in sent_emails for this send_log)
+      const storedEmails = new Set(
+        (db
+          .prepare("SELECT recipient_email FROM sent_emails WHERE send_log_id = ?")
+          .all(sendLog.id) as { recipient_email: string }[]).map((r) => r.recipient_email)
+      );
+      let seeded = 0;
+      for (const r of recipients) {
+        if (seeded >= missing) break;
+        if (storedEmails.has(r.email)) continue;
+        const placeholderId = `local-${sendLog.id}-${randomBytes(8).toString("hex")}`;
+        saveSentEmail(sendLog.id, placeholderId, r.email);
+        seeded++;
+      }
+    }
+  } finally {
+    db.close();
+  }
 
   return Response.json({
     success: result.success,

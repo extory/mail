@@ -644,6 +644,11 @@ export interface SendLogStats {
 // counts toward opened/delivered if we look at last_event alone.
 // We use the email_events history to count whether each event has *ever*
 // occurred for a given email.
+//
+// "sent" falls back to send_log.recipient_count when sent_emails is empty
+// for a campaign — this happens when Resend's batch response shape changes
+// and IDs aren't saved. Even without webhook events, the user should see
+// how many emails left.
 export function getSendLogStats(): SendLogStats[] {
   const db = getDb();
   return db.prepare(`
@@ -652,7 +657,10 @@ export function getSendLogStats(): SendLogStats[] {
       sl.subject,
       sl.sent_at,
       sl.recipient_count,
-      COALESCE(COUNT(DISTINCT se.id), 0) as sent,
+      CASE
+        WHEN COUNT(DISTINCT se.id) > 0 THEN COUNT(DISTINCT se.id)
+        ELSE COALESCE(sl.recipient_count, 0)
+      END as sent,
       COALESCE(SUM(CASE
         WHEN se.last_event IN ('delivered','opened','clicked')
           OR EXISTS (SELECT 1 FROM email_events ev WHERE ev.resend_id = se.resend_id AND ev.event_type IN ('delivered','opened','clicked'))
@@ -693,7 +701,7 @@ export function getOverallStats(): {
   total_failed: number;
 } {
   const db = getDb();
-  return db.prepare(`
+  const fromEvents = db.prepare(`
     SELECT
       COUNT(*) as total_sent,
       SUM(CASE
@@ -718,6 +726,27 @@ export function getOverallStats(): {
         THEN 1 ELSE 0 END) as total_failed
     FROM sent_emails
   `).get() as { total_sent: number; total_delivered: number; total_opened: number; total_clicked: number; total_bounced: number; total_failed: number };
+
+  // Fallback: when sent_emails is empty (e.g. ID save failed), fall back
+  // to send_log.recipient_count totals so the user still sees how many
+  // emails actually went out.
+  if (!fromEvents.total_sent || fromEvents.total_sent === 0) {
+    const fromLogs = db.prepare(`
+      SELECT
+        COALESCE(SUM(CASE WHEN status IN ('sent','partial') THEN recipient_count ELSE 0 END), 0) as total_sent,
+        COALESCE(SUM(CASE WHEN status = 'failed' THEN recipient_count ELSE 0 END), 0) as total_failed
+      FROM send_log
+    `).get() as { total_sent: number; total_failed: number };
+    return {
+      total_sent: fromLogs.total_sent,
+      total_delivered: 0,
+      total_opened: 0,
+      total_clicked: 0,
+      total_bounced: 0,
+      total_failed: fromLogs.total_failed,
+    };
+  }
+  return fromEvents;
 }
 
 // --- Dashboard ---
@@ -739,7 +768,7 @@ export function getDashboardData() {
     GROUP BY g.id ORDER BY count DESC LIMIT 5
   `).all() as { name: string; count: number }[];
 
-  const emailStats = db.prepare(`
+  let emailStats = db.prepare(`
     SELECT
       COALESCE(COUNT(*), 0) as total_sent,
       COALESCE(SUM(CASE WHEN last_event IN ('delivered','opened','clicked') THEN 1 ELSE 0 END), 0) as total_delivered,
@@ -749,6 +778,24 @@ export function getDashboardData() {
       COALESCE(SUM(CASE WHEN last_event = 'failed' THEN 1 ELSE 0 END), 0) as total_failed
     FROM sent_emails
   `).get() as { total_sent: number; total_delivered: number; total_opened: number; total_clicked: number; total_bounced: number; total_failed: number };
+
+  if (!emailStats.total_sent || emailStats.total_sent === 0) {
+    // Fallback when sent_emails is empty
+    const fromLogs = db.prepare(`
+      SELECT
+        COALESCE(SUM(CASE WHEN status IN ('sent','partial') THEN recipient_count ELSE 0 END), 0) as total_sent,
+        COALESCE(SUM(CASE WHEN status = 'failed' THEN recipient_count ELSE 0 END), 0) as total_failed
+      FROM send_log
+    `).get() as { total_sent: number; total_failed: number };
+    emailStats = {
+      total_sent: fromLogs.total_sent,
+      total_delivered: 0,
+      total_opened: 0,
+      total_clicked: 0,
+      total_bounced: 0,
+      total_failed: fromLogs.total_failed,
+    };
+  }
 
   const recentCampaigns = db.prepare(`
     SELECT sl.subject, sl.sent_at, sl.recipient_count, sl.status

@@ -152,24 +152,49 @@ export async function sendBulkEmails(
       } else if (result.data) {
         success += batch.length;
         // Resend batch.send response shape varies by SDK version:
-        // - v5+: { data: { data: [{ id }, ...] } }
+        // - v5+:   { data: { data: [{ id }, ...] } }
+        // - v6+:   { data: [{ id }, ...] }                  ← current
         // - older: { data: [{ id }, ...] }
+        // Walk a few common shapes to find the array of {id} objects.
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const raw = result.data as any;
-        const dataArr: Array<{ id?: string }> = Array.isArray(raw)
-          ? raw
-          : Array.isArray(raw?.data)
-            ? raw.data
-            : [];
+        let dataArr: Array<{ id?: string }> = [];
+        if (Array.isArray(raw)) {
+          dataArr = raw;
+        } else if (Array.isArray(raw?.data)) {
+          dataArr = raw.data;
+        } else if (Array.isArray(raw?.results)) {
+          dataArr = raw.results;
+        } else if (Array.isArray(raw?.emails)) {
+          dataArr = raw.emails;
+        } else if (raw && typeof raw === "object") {
+          // Last resort: find the first array of objects that contain "id"
+          for (const v of Object.values(raw)) {
+            if (Array.isArray(v) && v.length > 0 && typeof v[0] === "object" && v[0] !== null && "id" in v[0]) {
+              dataArr = v as Array<{ id?: string }>;
+              break;
+            }
+          }
+        }
+
         let savedCount = 0;
         for (let j = 0; j < dataArr.length; j++) {
-          if (dataArr[j]?.id) {
-            saveSentEmail(sendLogId, dataArr[j].id!, batch[j].email);
+          const id = dataArr[j]?.id;
+          if (id && batch[j]) {
+            saveSentEmail(sendLogId, id, batch[j].email);
             savedCount++;
           }
         }
         if (savedCount === 0) {
-          console.warn("[Resend] batch.send succeeded but no email IDs were saved. Response shape:", JSON.stringify(raw).slice(0, 500));
+          // Log the full top-level shape so we can extend the parser if Resend
+          // changes the schema again. Truncated to 1KB so logs don't explode.
+          console.warn(
+            "[Resend] batch.send succeeded but no email IDs were saved.",
+            "Top-level keys:",
+            raw && typeof raw === "object" ? Object.keys(raw).join(",") : typeof raw,
+            "Sample:",
+            JSON.stringify(raw).slice(0, 1024)
+          );
         } else {
           console.log(`[Resend] Saved ${savedCount}/${batch.length} email IDs for send_log ${sendLogId}`);
         }
