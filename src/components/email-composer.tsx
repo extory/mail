@@ -52,6 +52,8 @@ export function EmailComposer() {
   const [editError, setEditError] = useState<string | null>(null);
   const htmlTextareaRef = useRef<HTMLTextAreaElement>(null);
   const previewIframeRef = useRef<HTMLIFrameElement>(null);
+  const selectionPanelRef = useRef<HTMLDivElement>(null);
+  const editInstructionInputRef = useRef<HTMLInputElement>(null);
   const [selectionRange, setSelectionRange] = useState<{ start: number; end: number } | null>(null);
   const [sendAsImage, setSendAsImage] = useState(false);
   const [imageLink, setImageLink] = useState("");
@@ -399,6 +401,24 @@ export function EmailComposer() {
     // and setHtmlContent calls that immediately preceded the tick bump.
     Promise.resolve().then(() => snapshotRevision(pending.label, pending.note));
   }, [snapshotTick, snapshotRevision]);
+
+  // When a selection becomes available, scroll the edit panel into view
+  // and focus the instruction input so the user can immediately type.
+  const previousSelectedTextRef = useRef("");
+  useEffect(() => {
+    const wasEmpty = !previousSelectedTextRef.current;
+    previousSelectedTextRef.current = selectedText;
+    if (!selectedText || !wasEmpty) return;
+    // Wait one frame so React has mounted the panel before we scroll.
+    const raf = window.requestAnimationFrame(() => {
+      selectionPanelRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+      editInstructionInputRef.current?.focus({ preventScroll: true });
+    });
+    return () => window.cancelAnimationFrame(raf);
+  }, [selectedText]);
 
   // Track manual edits — whenever subject/html diverges from the last snapshot
   useEffect(() => {
@@ -819,7 +839,12 @@ export function EmailComposer() {
       let pendingText = "";
 
       const reportPendingSelection = () => {
-        if (!pendingRange || !pendingText.trim()) return;
+        if (!pendingRange || !pendingText.trim()) {
+          // Surface this in the console so we can tell whether the click
+          // reached the handler at all but had nothing to report.
+          try { (w as unknown as { console?: Console }).console?.warn?.("[mailsvc] reportPendingSelection: no pending selection"); } catch {}
+          return;
+        }
         const root = d.body;
         const fullText = (root as HTMLElement).innerText || root.textContent || "";
         const startOffset = fullText.indexOf(pendingText);
@@ -953,9 +978,19 @@ export function EmailComposer() {
           showEditPill(r);
         }
       });
-      // Drop the pill on scroll so it doesn't hover detached.
-      d.addEventListener("scroll", removeEditPill, true);
-      w.addEventListener("scroll", removeEditPill, true);
+      // Reposition the pill on scroll so it stays anchored to the selection
+      // (and doesn't disappear just because the user nudged the scrollbar).
+      const repositionPill = () => {
+        if (!editPill || !pendingRange) return;
+        const rects = pendingRange.getClientRects();
+        if (rects.length === 0) return;
+        const rect = rects[0];
+        editPill.style.left = Math.max(8, rect.left) + "px";
+        editPill.style.top = Math.max(8, rect.top - 40) + "px";
+      };
+      d.addEventListener("scroll", repositionPill, true);
+      w.addEventListener("scroll", repositionPill, true);
+      w.addEventListener("resize", repositionPill);
       // ---- Inline edit support ----
       // The parent toggles {type: 'preview-set-editable', value: boolean}
       // to enable / disable in-place editing. While enabled, every input
@@ -1451,7 +1486,9 @@ export function EmailComposer() {
 
       {/* Selection edit panel */}
       {htmlContent && selectedText && (
-        <div className="bg-surface-card border border-brand/30 rounded-xl p-5 shadow-[0_4px_24px_rgba(21,93,252,0.08)]">
+        <div
+          ref={selectionPanelRef}
+          className="bg-surface-card border border-brand/30 rounded-xl p-5 shadow-[0_4px_24px_rgba(21,93,252,0.08)]">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-[13px] font-semibold text-text-primary flex items-center gap-2">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-brand">
@@ -1490,6 +1527,7 @@ export function EmailComposer() {
           </div>
           <div className="flex gap-2">
             <input
+              ref={editInstructionInputRef}
               type="text"
               value={editInstruction}
               onChange={(e) => setEditInstruction(e.target.value)}
