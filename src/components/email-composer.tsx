@@ -37,6 +37,9 @@ export function EmailComposer() {
   const [sendResult, setSendResult] = useState<string | null>(null);
   const [saveResult, setSaveResult] = useState<string | null>(null);
   const [showHtml, setShowHtml] = useState(false);
+  // When true the visual iframe becomes contentEditable so the user can
+  // type directly into the preview and have it sync back to htmlContent.
+  const [inlineEditMode, setInlineEditMode] = useState(false);
   const [useName, setUseName] = useState(false);
   const [images, setImages] = useState<UploadedImage[]>([]);
   const [uploading, setUploading] = useState(false);
@@ -667,23 +670,59 @@ export function EmailComposer() {
     blockHtml: string | null;
   } | null>(null);
 
-  // Listen for selection from iframe via postMessage
+  // Listen for messages from the iframe (selection + inline edits)
   useEffect(() => {
     const handler = (e: MessageEvent) => {
-      if (e.data?.type !== "preview-selection") return;
-      const text: string = typeof e.data.text === "string" ? e.data.text : "";
-      const before: string = typeof e.data.before === "string" ? e.data.before : "";
-      const after: string = typeof e.data.after === "string" ? e.data.after : "";
-      const blockHtml: string | null = typeof e.data.blockHtml === "string" ? e.data.blockHtml : null;
-      if (!text.trim()) return;
-      setSelectedText(text);
-      setSelectionRange(null);
-      setSelectionContext({ before, after, blockHtml });
-      setEditError(null);
+      const data = e.data as
+        | {
+            type?: string;
+            text?: string;
+            before?: string;
+            after?: string;
+            blockHtml?: string;
+            html?: string;
+          }
+        | null;
+      if (!data?.type) return;
+
+      if (data.type === "preview-selection") {
+        const text = typeof data.text === "string" ? data.text : "";
+        const before = typeof data.before === "string" ? data.before : "";
+        const after = typeof data.after === "string" ? data.after : "";
+        const blockHtml = typeof data.blockHtml === "string" ? data.blockHtml : null;
+        if (!text.trim()) return;
+        setSelectedText(text);
+        setSelectionRange(null);
+        setSelectionContext({ before, after, blockHtml });
+        setEditError(null);
+      } else if (data.type === "preview-edited") {
+        // User typed directly into the preview — sync back to htmlContent
+        const html = typeof data.html === "string" ? data.html : null;
+        if (html === null) return;
+        // Mark that the next htmlContent update came from inside the
+        // iframe so the iframe-sync effect below doesn't re-set srcDoc
+        // and yank the cursor mid-typing.
+        inlineEditOriginRef.current = true;
+        setHtmlContent(html);
+      }
     };
     window.addEventListener("message", handler);
     return () => window.removeEventListener("message", handler);
   }, []);
+
+  // When htmlContent updates from outside (AI generate / restore / etc.)
+  // we DO want to re-render the iframe. When it updates because the user
+  // typed directly into the iframe, we DON'T (would reset the cursor).
+  const inlineEditOriginRef = useRef(false);
+  const [iframeSrcDoc, setIframeSrcDoc] = useState<string>("");
+  useEffect(() => {
+    if (inlineEditOriginRef.current) {
+      // Edit came from the iframe — don't bounce it back.
+      inlineEditOriginRef.current = false;
+      return;
+    }
+    setIframeSrcDoc(htmlContent);
+  }, [htmlContent]);
 
   // Inject selection listener + visual highlight into iframe
   useEffect(() => {
@@ -829,9 +868,50 @@ export function EmailComposer() {
           reportSelection();
         }
       });
+      // ---- Inline edit support ----
+      // The parent toggles {type: 'preview-set-editable', value: boolean}
+      // to enable / disable in-place editing. While enabled, every input
+      // event posts a 'preview-edited' message with the current body HTML,
+      // throttled with a 300ms debounce.
+      let inputTimer: number | null = null;
+      const reportEdit = () => {
+        // Strip any in-progress highlight spans so the html the parent
+        // stores is clean of our editor chrome.
+        clearHighlight();
+        const html = d.body.innerHTML;
+        w.parent.postMessage({ type: "preview-edited", html }, "*");
+      };
+      d.addEventListener("input", () => {
+        if (!d.body.isContentEditable) return;
+        if (inputTimer !== null) w.clearTimeout(inputTimer);
+        inputTimer = w.setTimeout(reportEdit, 300);
+      });
+      // Also flush on blur so the last keystroke isn't lost
+      d.addEventListener("blur", () => {
+        if (!d.body.isContentEditable) return;
+        if (inputTimer !== null) {
+          w.clearTimeout(inputTimer);
+          inputTimer = null;
+        }
+        reportEdit();
+      }, true);
+
+      const setEditable = (value: boolean) => {
+        d.body.contentEditable = value ? "true" : "false";
+        d.body.style.outline = value ? "2px dashed rgba(21, 93, 252, 0.35)" : "";
+        d.body.style.outlineOffset = value ? "-4px" : "";
+        d.body.style.minHeight = value ? "200px" : "";
+        if (value) {
+          clearHighlight();
+          // Make body focusable but don't immediately steal focus
+          d.body.setAttribute("tabindex", "-1");
+        }
+      };
+
       w.addEventListener("message", (ev: MessageEvent) => {
-        const data = ev.data as { type?: string } | null;
+        const data = ev.data as { type?: string; value?: boolean } | null;
         if (data?.type === "preview-clear-highlight") clearHighlight();
+        else if (data?.type === "preview-set-editable") setEditable(Boolean(data.value));
       });
     };
 
@@ -839,10 +919,18 @@ export function EmailComposer() {
       try {
         const doc = iframe.contentDocument;
         if (!doc?.body) return;
-        if (doc.body.getAttribute(INJECTED_MARK) === "1") return;
-        const script = doc.createElement("script");
-        script.textContent = "(" + iframeScript.toString() + ")();";
-        doc.body.appendChild(script);
+        if (doc.body.getAttribute(INJECTED_MARK) !== "1") {
+          const script = doc.createElement("script");
+          script.textContent = "(" + iframeScript.toString() + ")();";
+          doc.body.appendChild(script);
+        }
+        // Re-apply inline edit mode after fresh loads
+        if (inlineEditMode) {
+          iframe.contentWindow?.postMessage(
+            { type: "preview-set-editable", value: true },
+            "*"
+          );
+        }
       } catch {
         // sandboxed iframes block this — that's fine, user can switch to HTML view
       }
@@ -851,7 +939,7 @@ export function EmailComposer() {
     iframe.addEventListener("load", tryInject);
     tryInject();
     return () => iframe.removeEventListener("load", tryInject);
-  }, [htmlContent, showHtml]);
+  }, [htmlContent, showHtml, inlineEditMode]);
 
   const applyEdit = async () => {
     if (!selectedText || !editInstruction.trim()) return;
@@ -1186,8 +1274,40 @@ export function EmailComposer() {
                 </svg>
                 {savingRevision ? "..." : t("compose.save_as_revision")}
               </button>
+              {!showHtml && (
+                <button
+                  onClick={() => {
+                    const next = !inlineEditMode;
+                    setInlineEditMode(next);
+                    const iframe = previewIframeRef.current;
+                    if (iframe?.contentWindow) {
+                      iframe.contentWindow.postMessage(
+                        { type: "preview-set-editable", value: next },
+                        "*"
+                      );
+                    }
+                    // Drop any pending selection edit panel when entering inline mode
+                    if (next) cancelEdit();
+                  }}
+                  className={`text-[12px] font-medium transition-colors flex items-center gap-1 ${
+                    inlineEditMode ? "text-brand" : "text-text-muted hover:text-brand"
+                  }`}
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                  </svg>
+                  {inlineEditMode ? t("compose.edit_preview_on") : t("compose.edit_preview")}
+                </button>
+              )}
               <button
-                onClick={() => setShowHtml(!showHtml)}
+                onClick={() => {
+                  // Leaving visual preview also disables inline-edit so the
+                  // next time the user comes back the iframe isn't unexpectedly
+                  // still editable.
+                  if (!showHtml && inlineEditMode) setInlineEditMode(false);
+                  setShowHtml(!showHtml);
+                }}
                 className="text-[12px] text-text-muted hover:text-brand font-medium transition-colors"
               >
                 {showHtml ? t("compose.visual_preview") : t("compose.view_html")}
@@ -1208,7 +1328,7 @@ export function EmailComposer() {
           ) : (
             <iframe
               ref={previewIframeRef}
-              srcDoc={htmlContent}
+              srcDoc={iframeSrcDoc}
               sandbox="allow-same-origin allow-scripts"
               className="w-full min-h-[500px] border-0 bg-white"
               title="Email Preview"
