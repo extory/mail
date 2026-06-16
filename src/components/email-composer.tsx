@@ -813,61 +813,149 @@ export function EmailComposer() {
         } catch {}
       };
 
-      const reportSelection = () => {
-        const sel = d.getSelection();
-        if (!sel || sel.rangeCount === 0) return;
-        const range = sel.getRangeAt(0);
-        const text = sel.toString();
-        if (!text.trim()) return;
+      // Pending selection — captured on mouseup, only reported to the
+      // parent when the user actually clicks the floating "Edit" button.
+      let pendingRange: Range | null = null;
+      let pendingText = "";
 
+      const reportPendingSelection = () => {
+        if (!pendingRange || !pendingText.trim()) return;
         const root = d.body;
         const fullText = (root as HTMLElement).innerText || root.textContent || "";
-        const startOffset = fullText.indexOf(text);
+        const startOffset = fullText.indexOf(pendingText);
         let before = "";
         let after = "";
         if (startOffset !== -1) {
           before = fullText.slice(Math.max(0, startOffset - 80), startOffset);
           after = fullText.slice(
-            startOffset + text.length,
-            startOffset + text.length + 80
+            startOffset + pendingText.length,
+            startOffset + pendingText.length + 80
           );
         }
         let blockHtml: string | null = null;
-        const block = nearestBlock(range.startContainer);
+        const block = nearestBlock(pendingRange.startContainer);
         const outer = (block as HTMLElement).outerHTML;
         if (outer && outer.length < 4000) blockHtml = outer;
 
         w.parent.postMessage(
-          { type: "preview-selection", text, before, after, blockHtml },
+          { type: "preview-selection", text: pendingText, before, after, blockHtml },
           "*"
         );
       };
 
+      // Label text the parent sets via 'preview-set-pill-label' before any
+      // selection is made. Defaults to "Edit" so the pill never appears blank.
+      let pillLabel = "Edit";
+
+      // Floating "Edit" pill that appears just above the selection.
+      let editPill: HTMLDivElement | null = null;
+      const removeEditPill = () => {
+        if (editPill && editPill.parentNode) editPill.parentNode.removeChild(editPill);
+        editPill = null;
+      };
+      const showEditPill = (range: Range) => {
+        removeEditPill();
+        const rects = range.getClientRects();
+        if (rects.length === 0) return;
+        const rect = rects[0];
+        const pill = d.createElement("div");
+        pill.setAttribute("data-mailsvc-pill", "1");
+        pill.setAttribute("contenteditable", "false");
+        pill.style.cssText = [
+          "position: fixed",
+          "z-index: 2147483647",
+          "left: " + Math.max(8, rect.left) + "px",
+          "top: " + Math.max(8, rect.top - 40) + "px",
+          "background: #111827",
+          "color: #ffffff",
+          "padding: 6px 12px",
+          "border-radius: 999px",
+          "font: 600 12px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+          "box-shadow: 0 8px 24px rgba(0,0,0,0.18)",
+          "cursor: pointer",
+          "user-select: none",
+          "display: inline-flex",
+          "align-items: center",
+          "gap: 6px",
+          "white-space: nowrap",
+        ].join(";");
+        const icon = d.createElementNS("http://www.w3.org/2000/svg", "svg");
+        icon.setAttribute("width", "13");
+        icon.setAttribute("height", "13");
+        icon.setAttribute("viewBox", "0 0 24 24");
+        icon.setAttribute("fill", "none");
+        icon.setAttribute("stroke", "currentColor");
+        icon.setAttribute("stroke-width", "2.2");
+        icon.setAttribute("stroke-linecap", "round");
+        icon.setAttribute("stroke-linejoin", "round");
+        icon.innerHTML =
+          '<path d="M12 20h9"></path>' +
+          '<path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>';
+        pill.appendChild(icon);
+        const label = d.createElement("span");
+        label.textContent = pillLabel;
+        pill.appendChild(label);
+        pill.addEventListener("mousedown", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+        });
+        pill.addEventListener("click", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          if (pendingRange) {
+            reportPendingSelection();
+            try {
+              applyHighlight(pendingRange);
+            } catch {}
+          }
+          removeEditPill();
+          try { d.getSelection()?.removeAllRanges(); } catch {}
+        });
+        d.body.appendChild(pill);
+        editPill = pill;
+      };
+
       let mouseDown = false;
-      d.addEventListener("mousedown", () => {
+      d.addEventListener("mousedown", (e) => {
+        // Click on the pill itself shouldn't clear it; pill stops propagation
         mouseDown = true;
-        clearHighlight();
+        if (!(e.target as HTMLElement)?.closest?.("[data-mailsvc-pill]")) {
+          clearHighlight();
+          removeEditPill();
+          pendingRange = null;
+          pendingText = "";
+        }
       });
       d.addEventListener("mouseup", () => {
         mouseDown = false;
         const sel = d.getSelection();
         if (!sel || sel.rangeCount === 0) return;
         const r = sel.getRangeAt(0);
-        if (!r.toString().trim()) return;
-        const range = r.cloneRange();
-        reportSelection();
-        setTimeout(() => {
-          clearHighlight();
-          applyHighlight(range);
-          try { sel.removeAllRanges(); } catch {}
-        }, 0);
+        const text = r.toString();
+        if (!text.trim()) {
+          removeEditPill();
+          return;
+        }
+        pendingRange = r.cloneRange();
+        pendingText = text;
+        // Show the floating pill so the user can decide to send to AI
+        showEditPill(r);
       });
       d.addEventListener("keyup", (e) => {
         if (mouseDown) return;
         if ((e as KeyboardEvent).shiftKey || (e as KeyboardEvent).key === "Shift") {
-          reportSelection();
+          const sel = d.getSelection();
+          if (!sel || sel.rangeCount === 0) return;
+          const r = sel.getRangeAt(0);
+          if (!r.toString().trim()) return;
+          pendingRange = r.cloneRange();
+          pendingText = r.toString();
+          showEditPill(r);
         }
       });
+      // Drop the pill on scroll so it doesn't hover detached.
+      d.addEventListener("scroll", removeEditPill, true);
+      w.addEventListener("scroll", removeEditPill, true);
       // ---- Inline edit support ----
       // The parent toggles {type: 'preview-set-editable', value: boolean}
       // to enable / disable in-place editing. While enabled, every input
@@ -909,11 +997,30 @@ export function EmailComposer() {
       };
 
       w.addEventListener("message", (ev: MessageEvent) => {
-        const data = ev.data as { type?: string; value?: boolean } | null;
-        if (data?.type === "preview-clear-highlight") clearHighlight();
-        else if (data?.type === "preview-set-editable") setEditable(Boolean(data.value));
+        const data = ev.data as { type?: string; value?: boolean; label?: string } | null;
+        if (!data?.type) return;
+        if (data.type === "preview-clear-highlight") {
+          clearHighlight();
+          removeEditPill();
+          pendingRange = null;
+          pendingText = "";
+        } else if (data.type === "preview-set-editable") {
+          setEditable(Boolean(data.value));
+          // Inline-edit and the floating edit-pill don't coexist — clear
+          // anything pending when switching into edit mode.
+          if (data.value) {
+            clearHighlight();
+            removeEditPill();
+            pendingRange = null;
+            pendingText = "";
+          }
+        } else if (data.type === "preview-set-pill-label" && typeof data.label === "string") {
+          pillLabel = data.label;
+        }
       });
     };
+
+    const pillLabel = t("compose.edit_pill_label");
 
     const tryInject = () => {
       try {
@@ -924,7 +1031,12 @@ export function EmailComposer() {
           script.textContent = "(" + iframeScript.toString() + ")();";
           doc.body.appendChild(script);
         }
-        // Re-apply inline edit mode after fresh loads
+        // Send the localized pill label so newly-mounted iframes show
+        // the correct text the first time the user drags.
+        iframe.contentWindow?.postMessage(
+          { type: "preview-set-pill-label", label: pillLabel },
+          "*"
+        );
         if (inlineEditMode) {
           iframe.contentWindow?.postMessage(
             { type: "preview-set-editable", value: true },
@@ -939,7 +1051,7 @@ export function EmailComposer() {
     iframe.addEventListener("load", tryInject);
     tryInject();
     return () => iframe.removeEventListener("load", tryInject);
-  }, [htmlContent, showHtml, inlineEditMode]);
+  }, [htmlContent, showHtml, inlineEditMode, t]);
 
   const applyEdit = async () => {
     if (!selectedText || !editInstruction.trim()) return;
