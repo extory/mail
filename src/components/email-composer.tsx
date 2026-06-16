@@ -659,47 +659,196 @@ export function EmailComposer() {
     setEditError(null);
   };
 
+  // Selection context captured from the iframe — used to resolve the
+  // selection back to an exact slice of the source htmlContent.
+  const [selectionContext, setSelectionContext] = useState<{
+    before: string;
+    after: string;
+    blockHtml: string | null;
+  } | null>(null);
+
   // Listen for selection from iframe via postMessage
   useEffect(() => {
     const handler = (e: MessageEvent) => {
-      if (e.data?.type === "preview-selection" && typeof e.data.text === "string") {
-        setSelectedText(e.data.text);
-        setSelectionRange(null); // No exact range from visual preview
-        setEditError(null);
-      }
+      if (e.data?.type !== "preview-selection") return;
+      const text: string = typeof e.data.text === "string" ? e.data.text : "";
+      const before: string = typeof e.data.before === "string" ? e.data.before : "";
+      const after: string = typeof e.data.after === "string" ? e.data.after : "";
+      const blockHtml: string | null = typeof e.data.blockHtml === "string" ? e.data.blockHtml : null;
+      if (!text.trim()) return;
+      setSelectedText(text);
+      setSelectionRange(null);
+      setSelectionContext({ before, after, blockHtml });
+      setEditError(null);
     };
     window.addEventListener("message", handler);
     return () => window.removeEventListener("message", handler);
   }, []);
 
-  // Inject selection listener into iframe
+  // Inject selection listener + visual highlight into iframe
   useEffect(() => {
     if (showHtml || !htmlContent) return;
     const iframe = previewIframeRef.current;
     if (!iframe) return;
 
+    const INJECTED_MARK = "data-mail-svc-injected";
+
+    // The block below runs inside the iframe — defined here as a function
+    // so its source text can be stringified and re-injected on every load.
+    const iframeScript = function () {
+      const d: Document = document;
+      const w: Window = window;
+      if (d.body.getAttribute("data-mail-svc-injected") === "1") return;
+      d.body.setAttribute("data-mail-svc-injected", "1");
+
+      const style = d.createElement("style");
+      style.textContent =
+        ".__mailsvc-highlight { background: rgba(253, 199, 0, 0.35);" +
+        " outline: 2px solid #FDC700; outline-offset: 1px;" +
+        " border-radius: 2px; transition: background 0.15s ease; }";
+      d.head?.appendChild(style);
+
+      const blockTags = new Set([
+        "P","DIV","LI","H1","H2","H3","H4","H5","H6","BLOCKQUOTE","TD","TR",
+        "SECTION","ARTICLE","HEADER","FOOTER",
+      ]);
+      const nearestBlock = (node: Node | null): Element => {
+        let n: Node | null = node;
+        while (n && n.nodeType !== 1) n = n.parentNode;
+        let el = n as Element | null;
+        while (el && el !== d.body && !blockTags.has((el.tagName || "").toUpperCase())) {
+          el = el.parentElement;
+        }
+        return el || d.body;
+      };
+
+      let highlightSpans: HTMLElement[] = [];
+      const clearHighlight = () => {
+        for (const s of highlightSpans) {
+          const parent = s.parentNode;
+          if (!parent) continue;
+          while (s.firstChild) parent.insertBefore(s.firstChild, s);
+          parent.removeChild(s);
+          (parent as Element).normalize?.();
+        }
+        highlightSpans = [];
+      };
+
+      const applyHighlight = (range: Range) => {
+        try {
+          const root =
+            range.commonAncestorContainer.nodeType === 1
+              ? (range.commonAncestorContainer as Element)
+              : (range.commonAncestorContainer.parentNode as Element);
+          const walker = d.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+          const nodes: Text[] = [];
+          let n = walker.nextNode() as Text | null;
+          while (n) {
+            if (range.intersectsNode(n)) nodes.push(n);
+            n = walker.nextNode() as Text | null;
+          }
+          for (const tn of nodes) {
+            const start = tn === range.startContainer ? range.startOffset : 0;
+            const end =
+              tn === range.endContainer ? range.endOffset : (tn.nodeValue?.length ?? 0);
+            if (end <= start) continue;
+            const value = tn.nodeValue ?? "";
+            const before = value.slice(0, start);
+            const middle = value.slice(start, end);
+            const after = value.slice(end);
+            if (!middle) continue;
+            const span = d.createElement("span");
+            span.className = "__mailsvc-highlight";
+            span.textContent = middle;
+            const parent = tn.parentNode!;
+            if (before) {
+              tn.nodeValue = before;
+              parent.insertBefore(span, tn.nextSibling);
+              if (after) parent.insertBefore(d.createTextNode(after), span.nextSibling);
+            } else {
+              parent.replaceChild(span, tn);
+              if (after) parent.insertBefore(d.createTextNode(after), span.nextSibling);
+            }
+            highlightSpans.push(span);
+          }
+        } catch {}
+      };
+
+      const reportSelection = () => {
+        const sel = d.getSelection();
+        if (!sel || sel.rangeCount === 0) return;
+        const range = sel.getRangeAt(0);
+        const text = sel.toString();
+        if (!text.trim()) return;
+
+        const root = d.body;
+        const fullText = (root as HTMLElement).innerText || root.textContent || "";
+        const startOffset = fullText.indexOf(text);
+        let before = "";
+        let after = "";
+        if (startOffset !== -1) {
+          before = fullText.slice(Math.max(0, startOffset - 80), startOffset);
+          after = fullText.slice(
+            startOffset + text.length,
+            startOffset + text.length + 80
+          );
+        }
+        let blockHtml: string | null = null;
+        const block = nearestBlock(range.startContainer);
+        const outer = (block as HTMLElement).outerHTML;
+        if (outer && outer.length < 4000) blockHtml = outer;
+
+        w.parent.postMessage(
+          { type: "preview-selection", text, before, after, blockHtml },
+          "*"
+        );
+      };
+
+      let mouseDown = false;
+      d.addEventListener("mousedown", () => {
+        mouseDown = true;
+        clearHighlight();
+      });
+      d.addEventListener("mouseup", () => {
+        mouseDown = false;
+        const sel = d.getSelection();
+        if (!sel || sel.rangeCount === 0) return;
+        const r = sel.getRangeAt(0);
+        if (!r.toString().trim()) return;
+        const range = r.cloneRange();
+        reportSelection();
+        setTimeout(() => {
+          clearHighlight();
+          applyHighlight(range);
+          try { sel.removeAllRanges(); } catch {}
+        }, 0);
+      });
+      d.addEventListener("keyup", (e) => {
+        if (mouseDown) return;
+        if ((e as KeyboardEvent).shiftKey || (e as KeyboardEvent).key === "Shift") {
+          reportSelection();
+        }
+      });
+      w.addEventListener("message", (ev: MessageEvent) => {
+        const data = ev.data as { type?: string } | null;
+        if (data?.type === "preview-clear-highlight") clearHighlight();
+      });
+    };
+
     const tryInject = () => {
       try {
         const doc = iframe.contentDocument;
-        if (!doc) return;
+        if (!doc?.body) return;
+        if (doc.body.getAttribute(INJECTED_MARK) === "1") return;
         const script = doc.createElement("script");
-        script.textContent = `
-          document.addEventListener('mouseup', function() {
-            const sel = window.getSelection();
-            const text = sel ? sel.toString() : '';
-            if (text.trim().length > 0) {
-              parent.postMessage({ type: 'preview-selection', text: text }, '*');
-            }
-          });
-        `;
-        doc.body?.appendChild(script);
+        script.textContent = "(" + iframeScript.toString() + ")();";
+        doc.body.appendChild(script);
       } catch {
         // sandboxed iframes block this — that's fine, user can switch to HTML view
       }
     };
 
     iframe.addEventListener("load", tryInject);
-    // Try immediately too in case already loaded
     tryInject();
     return () => iframe.removeEventListener("load", tryInject);
   }, [htmlContent, showHtml]);
@@ -752,22 +901,31 @@ export function EmailComposer() {
           htmlContent.substring(selectionRange.end);
         setHtmlContent(newContent);
       } else {
-        // iframe-based: first occurrence replacement
-        const idx = htmlContent.indexOf(selectedText);
-        if (idx === -1) {
+        // iframe-based or pasted text — resolve the selection back to a
+        // span of the source html. Try several strategies in order of
+        // preference, all of which work even when the user typed/pasted
+        // a slightly different version of the selected text.
+        const found = locateSelectionInHtml(
+          htmlContent,
+          selectedText,
+          selectionContext
+        );
+        if (!found) {
           setEditError(t("compose.edit_not_found"));
           return;
         }
         const newContent =
-          htmlContent.substring(0, idx) +
+          htmlContent.substring(0, found.start) +
           replacement +
-          htmlContent.substring(idx + selectedText.length);
+          htmlContent.substring(found.end);
         setHtmlContent(newContent);
       }
       const usedInstruction = editInstruction;
       setSelectedText("");
       setSelectionRange(null);
+      setSelectionContext(null);
       setEditInstruction("");
+      clearIframeHighlight();
       // Queue snapshot after the htmlContent update flushes.
       pendingSnapshotRef.current = { label: "edited", note: usedInstruction };
       setSnapshotTick((n) => n + 1);
@@ -778,11 +936,19 @@ export function EmailComposer() {
     }
   };
 
+  const clearIframeHighlight = () => {
+    const iframe = previewIframeRef.current;
+    if (!iframe?.contentWindow) return;
+    iframe.contentWindow.postMessage({ type: "preview-clear-highlight" }, "*");
+  };
+
   const cancelEdit = () => {
     setSelectedText("");
     setSelectionRange(null);
+    setSelectionContext(null);
     setEditInstruction("");
     setEditError(null);
+    clearIframeHighlight();
   };
 
   const inputClass = "border border-border rounded-lg px-3 h-[38px] text-[13px] bg-white focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand transition-all placeholder:text-text-muted";
@@ -1068,8 +1234,27 @@ export function EmailComposer() {
               {t("cancel")}
             </button>
           </div>
-          <div className="bg-surface rounded-lg p-3 mb-3 text-[12px] text-text-secondary max-h-24 overflow-y-auto whitespace-pre-wrap break-words">
-            {selectedText.length > 300 ? selectedText.slice(0, 300) + "..." : selectedText}
+          <div className="mb-3">
+            <p className="text-[11px] text-text-muted mb-1.5 flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-sm bg-[#FDC700]" />
+              {t("compose.selected_block")}
+              {selectionRange ? null : (
+                <span className="text-[10px] text-text-muted">
+                  · {t("compose.selection_editable_hint")}
+                </span>
+              )}
+            </p>
+            <textarea
+              value={selectedText}
+              onChange={(e) => {
+                setSelectedText(e.target.value);
+                // User started editing — invalidate the exact range
+                if (selectionRange) setSelectionRange(null);
+              }}
+              rows={Math.min(6, Math.max(2, Math.ceil(selectedText.length / 80)))}
+              className="w-full bg-surface border border-border rounded-lg p-2.5 text-[12px] text-text-primary focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand transition-all whitespace-pre-wrap break-words resize-y"
+              placeholder={t("compose.selection_editable_hint")}
+            />
           </div>
           <div className="flex gap-2">
             <input
@@ -1457,4 +1642,223 @@ function RevisionItem({
       )}
     </li>
   );
+}
+
+// ---------- Selection resolution helpers ----------
+
+interface SelectionContext {
+  before: string;
+  after: string;
+  blockHtml: string | null;
+}
+
+/**
+ * Find a span of html that, when rendered, corresponds to `selection`.
+ * Returns the absolute {start, end} indices in `html`, or null when no
+ * reasonable match exists. The matcher is tolerant of:
+ *   - whitespace / newline differences
+ *   - HTML entities (&nbsp; etc.) vs the rendered character
+ *   - <span>, <strong>, <em> etc. interleaved with the visible text
+ * and uses the surrounding `before` / `after` context (also rendered
+ * text) to disambiguate when the same phrase appears more than once.
+ */
+function locateSelectionInHtml(
+  html: string,
+  selection: string,
+  ctx: SelectionContext | null
+): { start: number; end: number } | null {
+  if (!selection) return null;
+
+  // 1. Try an exact substring match first — works when the user actually
+  // dragged across a single text node.
+  const exactIdx = html.indexOf(selection);
+  if (exactIdx !== -1) {
+    return { start: exactIdx, end: exactIdx + selection.length };
+  }
+
+  // 2. Build a normalised projection of the html where every character of
+  // the html maps to either a rendered character or to "" (for markup).
+  // Then we can search the rendered string and translate the match back
+  // into html offsets.
+  const { rendered, mapping } = renderWithMapping(html);
+
+  const norm = (s: string) =>
+    s
+      .replace(/&nbsp;/g, " ")
+      .replace(/&amp;/g, "&")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/ /g, " ")
+      .replace(/[ \t\r\n]+/g, " ")
+      .trim();
+
+  const renderedNorm = norm(rendered);
+  const selNorm = norm(selection);
+  if (!selNorm) return null;
+
+  // Build a function that, given an index into renderedNorm, returns the
+  // corresponding index into rendered (and then html via mapping).
+  const renderedToNormIdx: number[] = [];
+  {
+    let j = 0;
+    let prevSpace = true;
+    for (let i = 0; i < rendered.length; i++) {
+      const ch = rendered[i];
+      const isWs = ch === " " || ch === "\t" || ch === "\n" || ch === "\r" || ch === " ";
+      if (isWs) {
+        if (prevSpace) {
+          renderedToNormIdx.push(j);
+        } else {
+          renderedToNormIdx.push(j);
+          j++;
+          prevSpace = true;
+        }
+      } else {
+        renderedToNormIdx.push(j);
+        j++;
+        prevSpace = false;
+      }
+    }
+  }
+
+  // Helper: locate selNorm inside renderedNorm using surrounding context
+  // to disambiguate. Returns the *normalised* start/end indices.
+  const beforeNorm = ctx ? norm(ctx.before) : "";
+  const afterNorm = ctx ? norm(ctx.after) : "";
+
+  let normStart = -1;
+  if (beforeNorm) {
+    // Try anchored on "before + selection"
+    const anchor = (beforeNorm + " " + selNorm).trim();
+    const altAnchor = beforeNorm + selNorm;
+    const ai = renderedNorm.indexOf(anchor);
+    if (ai !== -1) normStart = ai + anchor.length - selNorm.length;
+    else {
+      const ai2 = renderedNorm.indexOf(altAnchor);
+      if (ai2 !== -1) normStart = ai2 + altAnchor.length - selNorm.length;
+    }
+  }
+  if (normStart === -1) {
+    normStart = renderedNorm.indexOf(selNorm);
+  }
+  if (normStart === -1) {
+    // Last-resort: trim more aggressively (drop punctuation)
+    const stripPunct = (s: string) => s.replace(/[\p{P}\p{S}]+/gu, " ").replace(/\s+/g, " ").trim();
+    const selStrip = stripPunct(selNorm);
+    const renderedStrip = stripPunct(renderedNorm);
+    if (selStrip && renderedStrip.includes(selStrip)) {
+      // The stripped match doesn't give us precise offsets, so we still
+      // need to find a position. Use the prefix of selStrip to seed an
+      // approximate search inside renderedNorm.
+      const seed = selStrip.split(" ").slice(0, Math.min(4, selStrip.split(" ").length)).join(" ");
+      if (seed) {
+        const seedIdx = renderedNorm.toLowerCase().indexOf(seed.toLowerCase());
+        if (seedIdx !== -1) normStart = seedIdx;
+      }
+    }
+    if (normStart === -1) return null;
+  }
+  const normEnd = normStart + selNorm.length;
+
+  // Translate normalised offsets back to indices in `rendered`.
+  let renderedStart = -1;
+  let renderedEnd = -1;
+  for (let i = 0; i < renderedToNormIdx.length; i++) {
+    if (renderedStart === -1 && renderedToNormIdx[i] >= normStart) renderedStart = i;
+    if (renderedToNormIdx[i] >= normEnd) {
+      renderedEnd = i;
+      break;
+    }
+  }
+  if (renderedStart === -1) return null;
+  if (renderedEnd === -1) renderedEnd = rendered.length;
+
+  // Translate rendered offsets back to html offsets via the mapping
+  let htmlStart = mapping[renderedStart];
+  let htmlEnd = renderedEnd > 0 ? mapping[renderedEnd - 1] + 1 : htmlStart;
+  if (typeof htmlStart !== "number") return null;
+  // Expand to cover any whitespace right after the match in the source
+  while (htmlEnd < html.length && /\s/.test(html[htmlEnd])) htmlEnd++;
+  // Make sure we didn't slice in the middle of an HTML tag
+  htmlStart = backOutOfTag(html, htmlStart);
+  htmlEnd = forwardOutOfTag(html, htmlEnd);
+  if (htmlEnd <= htmlStart) return null;
+  return { start: htmlStart, end: htmlEnd };
+}
+
+/** Produces a plain-text "rendered" version of html alongside a map from
+ *  each character of the rendered output back to its source index in html. */
+function renderWithMapping(html: string): { rendered: string; mapping: number[] } {
+  const out: string[] = [];
+  const mapping: number[] = [];
+  const len = html.length;
+  let i = 0;
+  while (i < len) {
+    const ch = html[i];
+    if (ch === "<") {
+      // Skip to matching ">" — for tags / comments
+      const close = html.indexOf(">", i);
+      if (close === -1) break;
+      // Treat block-level closes as a space boundary so words don't merge
+      const blockClose = /^<\/(p|div|li|h[1-6]|tr|td|br\s*\/?|section|article|header|footer)\b/i.test(
+        html.slice(i)
+      );
+      if (blockClose) {
+        out.push(" ");
+        mapping.push(i);
+      }
+      i = close + 1;
+    } else if (ch === "&") {
+      const semi = html.indexOf(";", i);
+      if (semi !== -1 && semi - i <= 8) {
+        const ent = html.slice(i, semi + 1);
+        let decoded = ent;
+        switch (ent) {
+          case "&nbsp;": decoded = " "; break;
+          case "&amp;": decoded = "&"; break;
+          case "&lt;": decoded = "<"; break;
+          case "&gt;": decoded = ">"; break;
+          case "&quot;": decoded = '"'; break;
+          case "&#39;": case "&apos;": decoded = "'"; break;
+        }
+        for (let k = 0; k < decoded.length; k++) {
+          out.push(decoded[k]);
+          mapping.push(i);
+        }
+        i = semi + 1;
+      } else {
+        out.push(ch);
+        mapping.push(i);
+        i++;
+      }
+    } else {
+      out.push(ch);
+      mapping.push(i);
+      i++;
+    }
+  }
+  return { rendered: out.join(""), mapping };
+}
+
+function backOutOfTag(html: string, idx: number): number {
+  // If idx is inside `<...>`, move left until we're outside the tag
+  let depth = 0;
+  for (let i = idx; i >= 0; i--) {
+    if (html[i] === ">") {
+      if (depth > 0) depth--;
+      else return idx;
+    }
+    if (html[i] === "<") return i; // we hit the opening of a tag — split here
+  }
+  return idx;
+}
+
+function forwardOutOfTag(html: string, idx: number): number {
+  for (let i = idx; i < html.length; i++) {
+    if (html[i] === ">") return i + 1;
+    if (html[i] === "<") return idx;
+  }
+  return idx;
 }
