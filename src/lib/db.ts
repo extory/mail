@@ -98,6 +98,24 @@ function getDb(): Database.Database {
       CREATE INDEX IF NOT EXISTS idx_subscriber_groups_group ON subscriber_groups(group_id);
       CREATE INDEX IF NOT EXISTS idx_subscriber_groups_subscriber ON subscriber_groups(subscriber_id);
       CREATE INDEX IF NOT EXISTS idx_draft_revisions_draft ON draft_revisions(draft_id);
+      CREATE TABLE IF NOT EXISTS scheduled_sends (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        subject TEXT NOT NULL,
+        html_content TEXT NOT NULL,
+        prompt TEXT,
+        group_id INTEGER,
+        embed_images INTEGER DEFAULT 0,
+        scheduled_at TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        send_log_id INTEGER,
+        error TEXT,
+        created_at TEXT DEFAULT (datetime('now')),
+        sent_at TEXT,
+        created_by INTEGER,
+        FOREIGN KEY (group_id) REFERENCES groups(id) ON DELETE SET NULL,
+        FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_scheduled_sends_pending ON scheduled_sends(status, scheduled_at);
     `);
 
     // One-time migration: move legacy single group_id into join table
@@ -747,6 +765,106 @@ export function getOverallStats(): {
     };
   }
   return fromEvents;
+}
+
+// --- Scheduled sends ---
+
+export interface ScheduledSend {
+  id: number;
+  subject: string;
+  html_content: string;
+  prompt: string | null;
+  group_id: number | null;
+  embed_images: number;
+  scheduled_at: string; // ISO UTC
+  status: "pending" | "sending" | "sent" | "failed" | "canceled";
+  send_log_id: number | null;
+  error: string | null;
+  created_at: string;
+  sent_at: string | null;
+  created_by: number | null;
+}
+
+export function createScheduledSend(
+  subject: string,
+  htmlContent: string,
+  prompt: string | null,
+  groupId: number | null,
+  embedImages: boolean,
+  scheduledAtIso: string,
+  createdBy: number | null
+): ScheduledSend {
+  const db = getDb();
+  const result = db
+    .prepare(
+      "INSERT INTO scheduled_sends (subject, html_content, prompt, group_id, embed_images, scheduled_at, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)"
+    )
+    .run(
+      subject,
+      htmlContent,
+      prompt,
+      groupId,
+      embedImages ? 1 : 0,
+      scheduledAtIso,
+      createdBy
+    );
+  return db
+    .prepare("SELECT * FROM scheduled_sends WHERE id = ?")
+    .get(result.lastInsertRowid) as ScheduledSend;
+}
+
+export function getScheduledSends(): ScheduledSend[] {
+  const db = getDb();
+  return db
+    .prepare("SELECT * FROM scheduled_sends ORDER BY scheduled_at DESC")
+    .all() as ScheduledSend[];
+}
+
+export function getScheduledSend(id: number): ScheduledSend | undefined {
+  const db = getDb();
+  return db
+    .prepare("SELECT * FROM scheduled_sends WHERE id = ?")
+    .get(id) as ScheduledSend | undefined;
+}
+
+export function cancelScheduledSend(id: number): boolean {
+  const db = getDb();
+  const result = db
+    .prepare("UPDATE scheduled_sends SET status = 'canceled' WHERE id = ? AND status = 'pending'")
+    .run(id);
+  return result.changes > 0;
+}
+
+export function getDueScheduledSends(nowIso: string): ScheduledSend[] {
+  const db = getDb();
+  return db
+    .prepare(
+      "SELECT * FROM scheduled_sends WHERE status = 'pending' AND scheduled_at <= ? ORDER BY scheduled_at ASC LIMIT 20"
+    )
+    .all(nowIso) as ScheduledSend[];
+}
+
+export function markScheduledSendRunning(id: number): boolean {
+  const db = getDb();
+  // Atomic claim so two workers can't pick up the same row.
+  const result = db
+    .prepare(
+      "UPDATE scheduled_sends SET status = 'sending' WHERE id = ? AND status = 'pending'"
+    )
+    .run(id);
+  return result.changes > 0;
+}
+
+export function markScheduledSendDone(
+  id: number,
+  sendLogId: number,
+  status: "sent" | "failed",
+  error: string | null
+): void {
+  const db = getDb();
+  db.prepare(
+    "UPDATE scheduled_sends SET status = ?, send_log_id = ?, error = ?, sent_at = datetime('now') WHERE id = ?"
+  ).run(status, sendLogId, error, id);
 }
 
 // --- Dashboard ---

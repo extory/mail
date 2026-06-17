@@ -1,12 +1,13 @@
 import { NextRequest } from "next/server";
-import { getSubscribers, addSendLog, saveSentEmail } from "@/lib/db";
+import { getSubscribers, addSendLog, saveSentEmail, createScheduledSend } from "@/lib/db";
 import { sendBulkEmails } from "@/lib/resend";
+import { getSession } from "@/lib/auth";
 import Database from "better-sqlite3";
 import path from "path";
 import { randomBytes } from "crypto";
 
 export async function POST(request: NextRequest) {
-  const { subject, htmlContent, prompt, groupId, embedImages } = await request.json();
+  const { subject, htmlContent, prompt, groupId, embedImages, scheduledAt } = await request.json();
 
   if (!subject || !htmlContent) {
     console.error("[send] Missing subject or htmlContent", { subjectLen: subject?.length, htmlLen: htmlContent?.length });
@@ -14,6 +15,34 @@ export async function POST(request: NextRequest) {
       { error: "Subject and htmlContent are required" },
       { status: 400 }
     );
+  }
+
+  // Branch: scheduled send — store and return immediately.
+  if (scheduledAt) {
+    const when = new Date(scheduledAt);
+    if (isNaN(when.getTime())) {
+      return Response.json({ error: "Invalid scheduledAt" }, { status: 400 });
+    }
+    if (when.getTime() <= Date.now()) {
+      return Response.json(
+        { error: "Scheduled time must be in the future" },
+        { status: 400 }
+      );
+    }
+    const session = await getSession();
+    const job = createScheduledSend(
+      subject,
+      htmlContent,
+      prompt ?? null,
+      groupId ?? null,
+      embedImages === true,
+      when.toISOString(),
+      session?.id ?? null
+    );
+    console.log(
+      `[send] scheduled job=${job.id} at=${job.scheduled_at} subject="${subject}"`
+    );
+    return Response.json({ scheduled: true, id: job.id, scheduledAt: job.scheduled_at });
   }
 
   const subscribers = groupId

@@ -13,6 +13,7 @@ const protectedPaths = [
   "/compose",
   "/history",
   "/invitations",
+  "/scheduled",
   "/statistics",
   "/settings",
 ];
@@ -70,6 +71,7 @@ export const config = {
     "/compose/:path*",
     "/history/:path*",
     "/invitations/:path*",
+    "/scheduled/:path*",
     "/statistics/:path*",
     "/settings/:path*",
     "/api/((?!auth/).*)",

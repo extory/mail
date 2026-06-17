@@ -58,6 +58,11 @@ export function EmailComposer() {
   const [sendAsImage, setSendAsImage] = useState(false);
   const [imageLink, setImageLink] = useState("");
   const [embedMode, setEmbedMode] = useState<"url" | "cid">("url");
+  // Schedule send: when scheduleEnabled is true, the next "Send" call
+  // posts scheduledAt instead of dispatching immediately.
+  const [scheduleEnabled, setScheduleEnabled] = useState(false);
+  const [scheduleDate, setScheduleDate] = useState(""); // YYYY-MM-DD
+  const [scheduleTime, setScheduleTime] = useState(""); // HH:mm
 
   // Revisions
   const [revisions, setRevisions] = useState<Revision[]>([]);
@@ -500,6 +505,29 @@ export function EmailComposer() {
         finalHtml = buildImageOnlyHtml(imageUrl, subject, normalizeLink(imageLink));
       }
 
+      // Compute scheduledAt (ISO) when scheduling is enabled. The pickers
+      // give us local date + time strings; convert to UTC ISO.
+      let scheduledAtIso: string | undefined;
+      if (scheduleEnabled) {
+        if (!scheduleDate || !scheduleTime) {
+          setSendResult(`Error: ${t("compose.schedule_missing_time")}`);
+          setSending(false);
+          return;
+        }
+        const local = new Date(`${scheduleDate}T${scheduleTime}:00`);
+        if (isNaN(local.getTime())) {
+          setSendResult(`Error: ${t("compose.schedule_invalid")}`);
+          setSending(false);
+          return;
+        }
+        if (local.getTime() <= Date.now()) {
+          setSendResult(`Error: ${t("compose.schedule_in_past")}`);
+          setSending(false);
+          return;
+        }
+        scheduledAtIso = local.toISOString();
+      }
+
       const res = await fetch("/api/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -509,9 +537,24 @@ export function EmailComposer() {
           prompt,
           groupId: selectedGroupId ? Number(selectedGroupId) : undefined,
           embedImages: embedMode === "cid",
+          scheduledAt: scheduledAtIso,
         }),
       });
       const result = await res.json();
+
+      // Scheduled branch — just announce success.
+      if (result.scheduled) {
+        setSendResult(
+          t("compose.scheduled_ok", {
+            when: new Date(result.scheduledAt).toLocaleString(),
+          })
+        );
+        setScheduleEnabled(false);
+        setScheduleDate("");
+        setScheduleTime("");
+        if (draftId !== null) setShowSendKeepPrompt(true);
+        return;
+      }
 
       const sentCount: number = Number(result?.success ?? 0);
       const failedCount: number = Number(result?.failed ?? 0);
@@ -1630,6 +1673,75 @@ export function EmailComposer() {
             </div>
           </div>
 
+          {/* Schedule */}
+          <div className="pt-3 border-t border-border-light">
+            <label className="flex items-start gap-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={scheduleEnabled}
+                onChange={(e) => {
+                  const enabled = e.target.checked;
+                  setScheduleEnabled(enabled);
+                  if (enabled && !scheduleDate) {
+                    // Default to "today" + "next round 10 minutes from now"
+                    const now = new Date();
+                    now.setMinutes(now.getMinutes() + 10);
+                    const yyyy = now.getFullYear();
+                    const mm = String(now.getMonth() + 1).padStart(2, "0");
+                    const dd = String(now.getDate()).padStart(2, "0");
+                    const hh = String(now.getHours()).padStart(2, "0");
+                    const mi = String(now.getMinutes()).padStart(2, "0");
+                    setScheduleDate(`${yyyy}-${mm}-${dd}`);
+                    setScheduleTime(`${hh}:${mi}`);
+                  }
+                }}
+                className="w-4 h-4 mt-0.5 rounded border-border text-brand focus:ring-brand/20"
+                disabled={sending}
+              />
+              <div>
+                <span className="text-[13px] text-text-primary font-medium">
+                  {t("compose.schedule_enable")}
+                </span>
+                <p className="text-[11px] text-text-muted mt-0.5">
+                  {t("compose.schedule_enable_desc")}
+                </p>
+              </div>
+            </label>
+            {scheduleEnabled && (
+              <div className="ml-6 mt-3 flex items-end gap-2 flex-wrap">
+                <div>
+                  <label className="block text-[11px] font-medium text-text-secondary mb-1">
+                    {t("compose.schedule_date")}
+                  </label>
+                  <input
+                    type="date"
+                    value={scheduleDate}
+                    onChange={(e) => setScheduleDate(e.target.value)}
+                    disabled={sending}
+                    className="border border-border rounded-lg px-3 h-[38px] text-[13px] bg-white focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand transition-all"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-medium text-text-secondary mb-1">
+                    {t("compose.schedule_time")}
+                  </label>
+                  <input
+                    type="time"
+                    value={scheduleTime}
+                    onChange={(e) => setScheduleTime(e.target.value)}
+                    disabled={sending}
+                    className="border border-border rounded-lg px-3 h-[38px] text-[13px] bg-white focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand transition-all"
+                  />
+                </div>
+                <p className="text-[11px] text-text-muted">
+                  {scheduleDate && scheduleTime
+                    ? new Date(`${scheduleDate}T${scheduleTime}:00`).toLocaleString()
+                    : ""}
+                </p>
+              </div>
+            )}
+          </div>
+
           <div className="flex items-center gap-3 flex-wrap pt-2 border-t border-border-light">
             <select
               value={selectedGroupId}
@@ -1656,9 +1768,11 @@ export function EmailComposer() {
               )}
               {sending
                 ? (sendAsImage ? t("compose.rendering_image") : t("compose.sending"))
-                : selectedGroupId
-                  ? t("compose.send_group")
-                  : t("compose.send_all")}
+                : scheduleEnabled
+                  ? t("compose.schedule_send")
+                  : selectedGroupId
+                    ? t("compose.send_group")
+                    : t("compose.send_all")}
             </button>
             {sendResult && (
               <p className={`text-[13px] font-medium ${sendResult.startsWith("Error") ? "text-danger" : "text-success"}`}>
