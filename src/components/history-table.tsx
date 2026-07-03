@@ -1,15 +1,18 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import type { SendLog } from "@/lib/types";
 import { useLocale } from "./locale-provider";
 import { Pagination, paginate, type PageSize } from "./pagination";
 
 export function HistoryTable() {
   const { t } = useLocale();
+  const router = useRouter();
   const [logs, setLogs] = useState<SendLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [previewId, setPreviewId] = useState<number | null>(null);
+  const [restoringId, setRestoringId] = useState<number | null>(null);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<PageSize>(30);
 
@@ -18,6 +21,30 @@ export function HistoryTable() {
       .then((res) => res.json())
       .then((data) => { setLogs(data); setLoading(false); });
   }, []);
+
+  const restoreAsDraft = async (log: SendLog) => {
+    if (restoringId !== null) return;
+    if (!confirm(t("history.restore_confirm"))) return;
+    setRestoringId(log.id);
+    try {
+      const res = await fetch("/api/drafts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          subject: log.subject,
+          htmlContent: log.html_content,
+          prompt: log.prompt ?? "",
+        }),
+      });
+      const draft = await res.json();
+      if (draft?.id) {
+        // Jump straight into the composer with the fresh draft loaded
+        router.push(`/compose?draft=${draft.id}`);
+      }
+    } finally {
+      setRestoringId(null);
+    }
+  };
 
   const previewLog = logs.find((l) => l.id === previewId);
   const pageLogs = paginate(logs, page, pageSize);
@@ -65,12 +92,25 @@ export function HistoryTable() {
                       {log.status}
                     </span>
                   </td>
-                  <td className="px-5 py-3 text-right">
+                  <td className="px-5 py-3 text-right whitespace-nowrap">
                     <button
                       onClick={() => setPreviewId(previewId === log.id ? null : log.id)}
-                      className="text-brand hover:text-brand-dark text-[12px] font-medium transition-colors"
+                      className="text-brand hover:text-brand-dark text-[12px] font-medium mr-3 transition-colors"
                     >
                       {previewId === log.id ? t("close") : t("preview")}
+                    </button>
+                    <button
+                      onClick={() => restoreAsDraft(log)}
+                      disabled={restoringId !== null}
+                      className="text-text-secondary hover:text-brand text-[12px] font-medium disabled:opacity-40 transition-colors inline-flex items-center gap-1"
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                        <polyline points="14 2 14 8 20 8" />
+                        <line x1="12" y1="18" x2="12" y2="12" />
+                        <line x1="9" y1="15" x2="15" y2="15" />
+                      </svg>
+                      {restoringId === log.id ? "..." : t("history.restore_to_draft")}
                     </button>
                   </td>
                 </tr>
@@ -90,14 +130,29 @@ export function HistoryTable() {
 
       {previewLog && (
         <div className="bg-surface-card border border-border rounded-xl overflow-hidden">
-          <div className="flex justify-between items-center px-5 py-3 border-b border-border-light bg-surface">
-            <span className="text-[13px] font-medium text-text-primary">{previewLog.subject}</span>
-            <button
-              onClick={() => setPreviewId(null)}
-              className="text-text-muted hover:text-text-primary text-[12px] font-medium transition-colors"
-            >
-              {t("close")}
-            </button>
+          <div className="flex justify-between items-center px-5 py-3 border-b border-border-light bg-surface gap-3">
+            <span className="text-[13px] font-medium text-text-primary truncate">{previewLog.subject}</span>
+            <div className="flex items-center gap-3 flex-shrink-0">
+              <button
+                onClick={() => restoreAsDraft(previewLog)}
+                disabled={restoringId !== null}
+                className="text-brand hover:text-brand-dark text-[12px] font-medium disabled:opacity-40 transition-colors inline-flex items-center gap-1"
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                  <polyline points="14 2 14 8 20 8" />
+                  <line x1="12" y1="18" x2="12" y2="12" />
+                  <line x1="9" y1="15" x2="15" y2="15" />
+                </svg>
+                {restoringId === previewLog.id ? "..." : t("history.restore_to_draft")}
+              </button>
+              <button
+                onClick={() => setPreviewId(null)}
+                className="text-text-muted hover:text-text-primary text-[12px] font-medium transition-colors"
+              >
+                {t("close")}
+              </button>
+            </div>
           </div>
           <iframe
             srcDoc={previewLog.html_content}

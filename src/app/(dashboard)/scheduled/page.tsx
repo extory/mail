@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { useLocale } from "@/components/locale-provider";
 
 interface ScheduledSend {
@@ -26,10 +27,12 @@ const STATUS_BADGE: Record<string, string> = {
 
 export default function ScheduledPage() {
   const { t } = useLocale();
+  const router = useRouter();
   const [sends, setSends] = useState<ScheduledSend[]>([]);
   const [loading, setLoading] = useState(true);
   const [previewId, setPreviewId] = useState<number | null>(null);
   const [previewHtml, setPreviewHtml] = useState<string>("");
+  const [restoringId, setRestoringId] = useState<number | null>(null);
 
   const fetchSends = useCallback(async () => {
     const res = await fetch("/api/scheduled");
@@ -61,6 +64,33 @@ export default function ScheduledPage() {
       const data = await res.json();
       setPreviewHtml(data.html_content || "");
       setPreviewId(id);
+    }
+  };
+
+  const restoreAsDraft = async (id: number) => {
+    if (restoringId !== null) return;
+    if (!confirm(t("history.restore_confirm"))) return;
+    setRestoringId(id);
+    try {
+      // Fetch the full scheduled send to get html_content + prompt
+      const res = await fetch(`/api/scheduled/${id}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      const draftRes = await fetch("/api/drafts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          subject: data.subject,
+          htmlContent: data.html_content,
+          prompt: data.prompt ?? "",
+        }),
+      });
+      const draft = await draftRes.json();
+      if (draft?.id) {
+        router.push(`/compose?draft=${draft.id}`);
+      }
+    } finally {
+      setRestoringId(null);
     }
   };
 
@@ -135,6 +165,13 @@ export default function ScheduledPage() {
                     >
                       {previewId === s.id ? t("close") : t("preview")}
                     </button>
+                    <button
+                      onClick={() => restoreAsDraft(s.id)}
+                      disabled={restoringId !== null}
+                      className="text-text-secondary hover:text-brand text-[12px] font-medium disabled:opacity-40 transition-colors mr-3"
+                    >
+                      {restoringId === s.id ? "..." : t("history.restore_to_draft")}
+                    </button>
                     {s.status === "pending" && (
                       <button
                         onClick={() => handleCancel(s.id)}
@@ -153,19 +190,28 @@ export default function ScheduledPage() {
 
       {previewId !== null && previewHtml && (
         <div className="mt-6 bg-surface-card border border-border rounded-xl overflow-hidden">
-          <div className="flex justify-between items-center px-5 py-3 border-b border-border-light bg-surface">
-            <span className="text-[13px] font-medium text-text-primary">
+          <div className="flex justify-between items-center px-5 py-3 border-b border-border-light bg-surface gap-3">
+            <span className="text-[13px] font-medium text-text-primary truncate">
               {sends.find((s) => s.id === previewId)?.subject}
             </span>
-            <button
-              onClick={() => {
-                setPreviewId(null);
-                setPreviewHtml("");
-              }}
-              className="text-text-muted hover:text-text-primary text-[12px] font-medium transition-colors"
-            >
-              {t("close")}
-            </button>
+            <div className="flex items-center gap-3 flex-shrink-0">
+              <button
+                onClick={() => restoreAsDraft(previewId)}
+                disabled={restoringId !== null}
+                className="text-brand hover:text-brand-dark text-[12px] font-medium disabled:opacity-40 transition-colors"
+              >
+                {restoringId === previewId ? "..." : t("history.restore_to_draft")}
+              </button>
+              <button
+                onClick={() => {
+                  setPreviewId(null);
+                  setPreviewHtml("");
+                }}
+                className="text-text-muted hover:text-text-primary text-[12px] font-medium transition-colors"
+              >
+                {t("close")}
+              </button>
+            </div>
           </div>
           <iframe
             srcDoc={previewHtml}

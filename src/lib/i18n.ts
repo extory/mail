@@ -266,6 +266,8 @@ const translations = {
     "history.recipients": "Recipients",
     "history.status": "Status",
     "history.no_history": "No emails sent yet",
+    "history.restore_to_draft": "Save as draft",
+    "history.restore_confirm": "Copy this email into a new draft and open it in the composer?",
   },
   ko: {
     // Common
@@ -534,6 +536,8 @@ const translations = {
     "history.recipients": "수신자",
     "history.status": "상태",
     "history.no_history": "발송 이력이 없습니다",
+    "history.restore_to_draft": "임시저장으로 복원",
+    "history.restore_confirm": "이 이메일을 새 임시저장으로 복사한 뒤 작성 화면에서 열까요?",
   },
 } as const;
 
