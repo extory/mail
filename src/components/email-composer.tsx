@@ -963,17 +963,31 @@ export function EmailComposer() {
         const label = d.createElement("span");
         label.textContent = pillLabel;
         pill.appendChild(label);
-        pill.addEventListener("mousedown", (e) => {
+        // The pill floats over the preview. We swallow every mouse event
+        // that lands on it so the body-level mousedown/mouseup handlers
+        // don't clear the pending selection or remove the pill before the
+        // click has a chance to fire.
+        const swallow = (e: Event) => {
           e.preventDefault();
           e.stopPropagation();
-        });
+        };
+        pill.addEventListener("mousedown", swallow);
+        pill.addEventListener("mouseup", swallow);
+        pill.addEventListener("pointerdown", swallow);
+        pill.addEventListener("pointerup", swallow);
         pill.addEventListener("click", (e) => {
           e.preventDefault();
           e.stopPropagation();
-          if (pendingRange) {
+          if (pendingRange && pendingText.trim()) {
             reportPendingSelection();
             try {
               applyHighlight(pendingRange);
+            } catch {}
+          } else {
+            try {
+              (w as unknown as { console?: Console }).console?.warn?.(
+                "[mailsvc] pill clicked but no pending selection"
+              );
             } catch {}
           }
           removeEditPill();
@@ -994,8 +1008,12 @@ export function EmailComposer() {
           pendingText = "";
         }
       });
-      d.addEventListener("mouseup", () => {
+      d.addEventListener("mouseup", (e) => {
         mouseDown = false;
+        // Ignore mouseups that originate on the pill itself — they must
+        // reach the pill's own handler and become a click without our
+        // "no selection → remove pill" logic dropping the pill first.
+        if ((e.target as HTMLElement)?.closest?.("[data-mailsvc-pill]")) return;
         const sel = d.getSelection();
         if (!sel || sel.rangeCount === 0) return;
         const r = sel.getRangeAt(0);
