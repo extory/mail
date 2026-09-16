@@ -1,4 +1,4 @@
-import Anthropic from "@anthropic-ai/sdk";
+import OpenAI from "openai";
 import { GoogleGenAI } from "@google/genai";
 
 const SYSTEM_PROMPT = `You are an expert email newsletter writer. Generate a complete HTML email based on the user's topic.
@@ -39,7 +39,7 @@ ${images.map((img, i) => `  [Image ${i + 1}]
     URL: ${img.url}
     ${img.description ? `Description / Intent: ${img.description}` : `Description: (none — infer from context)`}`).join("\n\n")}`;
 
-type Provider = "anthropic" | "gemini";
+type Provider = "openai" | "gemini";
 
 interface GenerateOptions {
   useName?: boolean;
@@ -56,41 +56,62 @@ function buildSystemPrompt(options: GenerateOptions): string {
 }
 
 function getProvider(): Provider {
-  if (process.env.ANTHROPIC_API_KEY && !process.env.ANTHROPIC_API_KEY.includes("your-key")) {
-    return "anthropic";
+  if (process.env.OPENAI_API_KEY && !process.env.OPENAI_API_KEY.includes("your-key")) {
+    return "openai";
   }
   if (process.env.GEMINI_API_KEY && !process.env.GEMINI_API_KEY.includes("your-key")) {
     return "gemini";
   }
-  throw new Error("No AI API key configured. Set ANTHROPIC_API_KEY or GEMINI_API_KEY in .env.local");
+  throw new Error("No AI API key configured. Set OPENAI_API_KEY or GEMINI_API_KEY in .env.local");
 }
 
-async function generateWithAnthropic(prompt: string, systemPrompt: string): Promise<ReadableStream> {
-  const client = new Anthropic();
-  const stream = client.messages.stream({
-    model: "claude-sonnet-4-6",
-    max_tokens: 4096,
-    system: systemPrompt,
-    messages: [{ role: "user", content: prompt }],
-  });
+function getOpenAIModel(): string {
+  return process.env.OPENAI_MODEL?.trim() || "gpt-4.1";
+}
 
+async function generateWithOpenAI(prompt: string, systemPrompt: string): Promise<ReadableStream> {
+  const client = new OpenAI();
+  const stream = await client.responses.create({
+    model: getOpenAIModel(),
+    max_output_tokens: 4096,
+    instructions: systemPrompt,
+    input: prompt,
+    stream: true,
+    store: false,
+  });
   const encoder = new TextEncoder();
+  let cancelled = false;
 
   return new ReadableStream({
     async start(controller) {
       try {
+        let completed = false;
         for await (const event of stream) {
-          if (
-            event.type === "content_block_delta" &&
-            event.delta.type === "text_delta"
-          ) {
-            controller.enqueue(encoder.encode(event.delta.text));
+          if (cancelled) return;
+          if (event.type === "response.output_text.delta") {
+            controller.enqueue(encoder.encode(event.delta));
+          } else if (event.type === "response.completed") {
+            completed = true;
+          } else if (event.type === "error" || event.type === "response.failed") {
+            throw new Error("OpenAI email generation failed. Please try again.");
+          } else if (event.type === "response.incomplete") {
+            throw new Error("OpenAI email generation was incomplete. Please try a shorter request.");
+          } else if (event.type === "response.refusal.delta") {
+            throw new Error("OpenAI could not fulfill this email request.");
           }
         }
+        if (cancelled) return;
+        if (!completed) throw new Error("OpenAI stream ended before completion.");
         controller.close();
       } catch (error) {
-        controller.error(error);
+        if (!cancelled) controller.error(error);
+      } finally {
+        stream.controller.abort();
       }
+    },
+    cancel() {
+      cancelled = true;
+      stream.controller.abort();
     },
   });
 }
@@ -128,8 +149,8 @@ export async function generateEmailStream(
   const provider = getProvider();
   const systemPrompt = buildSystemPrompt(options);
 
-  if (provider === "anthropic") {
-    return generateWithAnthropic(prompt, systemPrompt);
+  if (provider === "openai") {
+    return generateWithOpenAI(prompt, systemPrompt);
   } else {
     return generateWithGemini(prompt, systemPrompt);
   }
@@ -148,17 +169,20 @@ Rules:
 - Match the tone, style, and formality of the original.
 - {{name}} placeholders MUST remain exactly as {{name}} — do not replace them.`;
 
-async function editWithAnthropic(selection: string, instruction: string): Promise<string> {
-  const client = new Anthropic();
+async function editWithOpenAI(selection: string, instruction: string): Promise<string> {
+  const client = new OpenAI();
   const userMessage = `Original selection:\n---\n${selection}\n---\n\nInstruction: ${instruction}\n\nProvide only the replacement text.`;
-  const response = await client.messages.create({
-    model: "claude-sonnet-4-6",
-    max_tokens: 2048,
-    system: EDIT_SYSTEM_PROMPT,
-    messages: [{ role: "user", content: userMessage }],
+  const response = await client.responses.create({
+    model: getOpenAIModel(),
+    max_output_tokens: 2048,
+    instructions: EDIT_SYSTEM_PROMPT,
+    input: userMessage,
+    store: false,
   });
-  const block = response.content[0];
-  return block.type === "text" ? block.text : "";
+  if (response.status !== "completed" || !response.output_text.trim()) {
+    throw new Error("OpenAI could not complete the edit. Please try again.");
+  }
+  return response.output_text;
 }
 
 async function editWithGemini(selection: string, instruction: string): Promise<string> {
@@ -173,8 +197,8 @@ async function editWithGemini(selection: string, instruction: string): Promise<s
 
 export async function editSelection(selection: string, instruction: string): Promise<string> {
   const provider = getProvider();
-  const result = provider === "anthropic"
-    ? await editWithAnthropic(selection, instruction)
+  const result = provider === "openai"
+    ? await editWithOpenAI(selection, instruction)
     : await editWithGemini(selection, instruction);
   // Strip any residual code fences just in case
   return result

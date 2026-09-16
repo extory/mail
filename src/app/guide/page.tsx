@@ -16,9 +16,9 @@ const content = {
         title: "필요 사항",
         items: [
           "Ubuntu 20.04+ 또는 Debian 11+ 서버",
-          "Node.js 20+ (설치 스크립트에 포함)",
+          "Node.js 22+ (설치 스크립트에 포함)",
           "도메인 (예: mail.yourdomain.com)",
-          "Anthropic 또는 Google AI Studio API 키",
+          "OpenAI 또는 Google AI Studio API 키",
           "Resend API 키 + 인증된 발신 도메인",
         ],
       },
@@ -26,9 +26,9 @@ const content = {
         title: "필요 사항",
         items: [
           "Mac, Windows, 또는 Linux PC",
-          "Node.js 20+ (nodejs.org 에서 다운로드)",
+          "Node.js 22+ (nodejs.org 에서 다운로드)",
           "Git",
-          "Anthropic 또는 Google AI Studio API 키",
+          "OpenAI 또는 Google AI Studio API 키",
           "Resend API 키 + 인증된 발신 도메인",
         ],
       },
@@ -47,7 +47,7 @@ const content = {
 nano .env.local
 
 # 아래 값들을 입력하세요:
-# ANTHROPIC_API_KEY=sk-ant-...  (또는 GEMINI_API_KEY)
+# OPENAI_API_KEY=sk-...  (또는 GEMINI_API_KEY)
 # RESEND_API_KEY=re_...
 # SENDER_EMAIL=newsletter@yourdomain.com
 # SENDER_NAME=My Newsletter
@@ -86,7 +86,7 @@ nano .env.local
           code: `cp .env.example .env.local
 
 # .env.local 파일을 텍스트 편집기로 열고 입력하세요:
-# ANTHROPIC_API_KEY=sk-ant-...  (또는 GEMINI_API_KEY)
+# OPENAI_API_KEY=sk-...  (또는 GEMINI_API_KEY)
 # RESEND_API_KEY=re_...
 # SENDER_EMAIL=newsletter@yourdomain.com
 # SENDER_NAME=My Newsletter
@@ -247,9 +247,9 @@ npm run start`,
         title: "Requirements",
         items: [
           "Ubuntu 20.04+ or Debian 11+ server",
-          "Node.js 20+ (included in setup script)",
+          "Node.js 22+ (included in setup script)",
           "A domain (e.g. mail.yourdomain.com)",
-          "Anthropic or Google AI Studio API key",
+          "OpenAI or Google AI Studio API key",
           "Resend API key + verified sending domain",
         ],
       },
@@ -257,9 +257,9 @@ npm run start`,
         title: "Requirements",
         items: [
           "Mac, Windows, or Linux PC",
-          "Node.js 20+ (download from nodejs.org)",
+          "Node.js 22+ (download from nodejs.org)",
           "Git",
-          "Anthropic or Google AI Studio API key",
+          "OpenAI or Google AI Studio API key",
           "Resend API key + verified sending domain",
         ],
       },
@@ -278,7 +278,7 @@ npm run start`,
 nano .env.local
 
 # Fill in these values:
-# ANTHROPIC_API_KEY=sk-ant-...  (or GEMINI_API_KEY)
+# OPENAI_API_KEY=sk-...  (or GEMINI_API_KEY)
 # RESEND_API_KEY=re_...
 # SENDER_EMAIL=newsletter@yourdomain.com
 # SENDER_NAME=My Newsletter
@@ -317,7 +317,7 @@ nano .env.local
           code: `cp .env.example .env.local
 
 # Open .env.local in a text editor and fill in:
-# ANTHROPIC_API_KEY=sk-ant-...  (or GEMINI_API_KEY)
+# OPENAI_API_KEY=sk-...  (or GEMINI_API_KEY)
 # RESEND_API_KEY=re_...
 # SENDER_EMAIL=newsletter@yourdomain.com
 # SENDER_NAME=My Newsletter
