@@ -10,7 +10,21 @@ const WEBHOOK_SECRET = process.env.RESEND_WEBHOOK_SECRET;
 
 export async function POST(request: NextRequest) {
   try {
-    const rawBody = await request.text();
+    if (!WEBHOOK_SECRET) return Response.json({ error: "Webhook not configured" }, { status: 503 });
+    if (Number(request.headers.get("content-length")) > 262144) return Response.json({ error: "Payload too large" }, { status: 413 });
+    const reader = request.body?.getReader();
+    const chunks: Uint8Array[] = []; let bytes = 0;
+    if (reader) {
+      try {
+        while (true) {
+          const { done, value } = await reader.read(); if (done) break;
+          bytes += value.byteLength;
+          if (bytes > 262144) { await reader.cancel(); return Response.json({ error: "Payload too large" }, { status: 413 }); }
+          chunks.push(value);
+        }
+      } finally { reader.releaseLock(); }
+    }
+    const rawBody = Buffer.concat(chunks).toString("utf8");
 
     let payload: unknown;
 
@@ -29,22 +43,10 @@ export async function POST(request: NextRequest) {
       try {
         const wh = new Webhook(WEBHOOK_SECRET);
         payload = wh.verify(rawBody, headers);
-      } catch (err) {
-        console.error("[Webhook] Signature verification failed:", {
-          error: err instanceof Error ? err.message : String(err),
-          secretLength: WEBHOOK_SECRET.length,
-          secretPrefix: WEBHOOK_SECRET.slice(0, 8),
-          headers: {
-            id: headers["svix-id"],
-            timestamp: headers["svix-timestamp"],
-            signaturePrefix: headers["svix-signature"]?.slice(0, 30),
-          },
-          bodyLength: rawBody.length,
-        });
+      } catch {
+        console.error("[Webhook] Signature verification failed");
         return Response.json({ error: "Invalid signature" }, { status: 401 });
       }
-    } else {
-      payload = JSON.parse(rawBody);
     }
 
     const { type, data } = payload as { type: string; data: { email_id?: string; bounce?: unknown; failed?: unknown; click?: unknown } };
@@ -77,8 +79,8 @@ export async function POST(request: NextRequest) {
     recordEmailEvent(data.email_id, eventType, extraData);
 
     return Response.json({ ok: true, event: eventType });
-  } catch (err) {
-    console.error("[Webhook error]", err);
+  } catch {
+    console.error("[Webhook] Request processing failed");
     return Response.json({ error: "Internal error" }, { status: 500 });
   }
 }
