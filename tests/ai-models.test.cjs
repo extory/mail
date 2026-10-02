@@ -121,3 +121,13 @@ test('Gemini discovery reads every page before choosing latest', async () => {
   assert.equal((await models.getProviderModels('gemini')).latest, 'gemini-10.2-pro');
   assert.equal(pages,2);
 });
+
+test('reuse instructions set requested language while retaining HTML and placeholder requirements', async () => {
+  const stream = await ai.generateEmailStream('Original email reference', {provider:'openai',model:'auto',reuse:{mode:'translate',language:'ja'}});
+  await new Response(stream).text();
+  const call = calls.find(c=>c.url.includes('/responses'));
+  assert.match(call.body.instructions,/Output language: Japanese/);
+  assert.match(call.body.instructions,/Translate the original subject/);
+  assert.match(call.body.instructions,/Preserve image URLs/);
+  assert.match(call.body.instructions,/\{\{name\}\}/);
+});

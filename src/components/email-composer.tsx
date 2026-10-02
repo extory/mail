@@ -1,5 +1,6 @@
 "use client";
 
+import { EMAIL_LANGUAGES, type EmailLanguage, type ReuseMode } from "@/lib/email-reuse";
 import { SendReport } from "./send-report";
 
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
@@ -58,6 +59,9 @@ export function EmailComposer() {
   const providerModels = aiCatalog?.providers.find(p => p.provider === aiProvider);
   const aiReady = !modelsLoading && !modelsError && Boolean(providerModels?.models.length)
     && (aiModel === "auto" || Boolean(providerModels?.models.some(m => m.id === aiModel)));
+  const [sourceSendLogId, setSourceSendLogId] = useState<number | null>(null);
+  const [reuseMode, setReuseMode] = useState<ReuseMode>("rewrite");
+  const [targetLanguage, setTargetLanguage] = useState<EmailLanguage>("original");
   const [draftId, setDraftId] = useState<number | null>(null);
   const [prompt, setPrompt] = useState("");
   const [subject, setSubject] = useState("");
@@ -130,6 +134,7 @@ export function EmailComposer() {
       .then((draft) => {
         if (!draft.error) {
           setDraftId(draft.id);
+          setSourceSendLogId(draft.source_send_log_id ?? null);
           setPrompt(draft.prompt || "");
           setSubject(draft.subject || "");
           setHtmlContent(draft.html_content || "");
@@ -217,7 +222,9 @@ export function EmailComposer() {
   );
 
   const handleGenerate = useCallback(async () => {
-    if (!prompt.trim() || !aiReady) return;
+    if ((!prompt.trim() && !sourceSendLogId) || !aiReady) return;
+    const previousSubject = subject;
+    const previousHtml = htmlContent;
     setGenerating(true);
     setHtmlContent("");
     setSubject("");
@@ -230,6 +237,9 @@ export function EmailComposer() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           prompt,
+          sourceSendLogId: sourceSendLogId || undefined,
+          reuseMode,
+          targetLanguage,
           useName,
           provider: aiProvider,
           model: aiModel,
@@ -355,13 +365,14 @@ export function EmailComposer() {
       }
     } catch (err) {
       console.error(err);
+      if (sourceSendLogId) { setSubject(previousSubject); setHtmlContent(previousHtml); }
       setSendResult(err instanceof Error ? err.message : t("compose.error_generate"));
     } finally {
       setGenerating(false);
     }
     // Ask the user whether to keep this as a draft.
     setShowSavePrompt(true);
-  }, [prompt, useName, images, t, ensureDraftId, aiProvider, aiModel, aiReady]);
+  }, [prompt, useName, images, t, ensureDraftId, aiProvider, aiModel, aiReady, sourceSendLogId, reuseMode, targetLanguage, subject, htmlContent]);
 
   const handleSave = async () => {
     setSaving(true);
@@ -1334,6 +1345,22 @@ export function EmailComposer() {
         <button type="button" onClick={() => void loadModels()} disabled={modelsLoading || generating || editing}
           className="text-[12px] text-brand disabled:opacity-40">{t("compose.ai_reload")}</button>
       </div>
+      {sourceSendLogId !== null && <div className="rounded-xl border border-brand/20 bg-brand/5 p-4 space-y-3">
+        <p className="text-[13px] font-medium">{t("compose.reuse_hint")}</p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <label className="text-[12px]">{t("compose.reuse_mode")}
+            <select value={reuseMode} onChange={e => setReuseMode(e.target.value as ReuseMode)} disabled={generating || editing} className={`${inputClass} w-full mt-1`}>
+              <option value="rewrite">{t("compose.reuse_rewrite")}</option><option value="translate">{t("compose.reuse_translate")}</option>
+            </select>
+          </label>
+          <label className="text-[12px]">{t("compose.reuse_language")}
+            <select value={targetLanguage} onChange={e => setTargetLanguage(e.target.value as EmailLanguage)} disabled={generating || editing} className={`${inputClass} w-full mt-1`}>
+              {Object.keys(EMAIL_LANGUAGES).map(code => <option key={code} value={code}>{t(`compose.language.${code as EmailLanguage}`)}</option>)}
+            </select>
+          </label>
+        </div>
+        <p className="text-[12px] text-text-secondary">{t("compose.reuse_instructions")}</p>
+      </div>}
       {/* Prompt input */}
       <div className="bg-surface-card border border-border rounded-xl p-5">
         <label className="block text-[12px] font-medium text-text-secondary mb-2">
@@ -1440,7 +1467,7 @@ export function EmailComposer() {
           </label>
           <button
             onClick={handleGenerate}
-            disabled={generating || editing || !prompt.trim() || !aiReady}
+            disabled={generating || editing || (!prompt.trim() && !sourceSendLogId) || !aiReady}
             className="bg-gradient-to-r from-brand-light to-accent text-white px-6 py-2.5 rounded-lg text-[13px] font-medium hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
           >
             {generating ? (

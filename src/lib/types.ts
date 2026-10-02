@@ -20,6 +20,7 @@ export interface Group {
 }
 
 export interface Draft {
+  source_send_log_id?: number | null;
   id: number;
   subject: string;
   html_content: string;

@@ -14,6 +14,7 @@ export function HistoryTable() {
   const [loading, setLoading] = useState(true);
   const [reportId, setReportId] = useState<number | null>(null);
   const [previewId, setPreviewId] = useState<number | null>(null);
+  const [copyError, setCopyError] = useState(false);
   const [restoringId, setRestoringId] = useState<number | null>(null);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<PageSize>(30);
@@ -26,24 +27,17 @@ export function HistoryTable() {
 
   const restoreAsDraft = async (log: SendLog) => {
     if (restoringId !== null) return;
-    if (!confirm(t("history.restore_confirm"))) return;
+    setCopyError(false);
     setRestoringId(log.id);
     try {
-      const res = await fetch("/api/drafts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          subject: log.subject,
-          htmlContent: log.html_content,
-          prompt: log.prompt ?? "",
-        }),
-      });
+      const res = await fetch(`/api/history/${log.id}/copy`, { method: "POST" });
+      if (!res.ok) throw new Error("Copy failed");
       const draft = await res.json();
       if (draft?.id) {
         // Jump straight into the composer with the fresh draft loaded
         router.push(`/compose?draft=${draft.id}`);
       }
-    } finally {
+    } catch { setCopyError(true); } finally {
       setRestoringId(null);
     }
   };
@@ -53,6 +47,7 @@ export function HistoryTable() {
 
   return (
     <div className="space-y-5">
+      {copyError && <p role="alert" className="text-danger text-[13px]">{t("history.copy_error")}</p>}
       <div className="bg-surface-card border border-border rounded-xl overflow-hidden">
         <table className="w-full text-[13px]">
           <thead>
@@ -113,7 +108,7 @@ export function HistoryTable() {
                         <line x1="12" y1="18" x2="12" y2="12" />
                         <line x1="9" y1="15" x2="15" y2="15" />
                       </svg>
-                      {restoringId === log.id ? "..." : t("history.restore_to_draft")}
+                      {restoringId === log.id ? "..." : t("history.copy_email")}
                     </button>
                   </td>
                 </tr>
@@ -148,7 +143,7 @@ export function HistoryTable() {
                   <line x1="12" y1="18" x2="12" y2="12" />
                   <line x1="9" y1="15" x2="15" y2="15" />
                 </svg>
-                {restoringId === previewLog.id ? "..." : t("history.restore_to_draft")}
+                {restoringId === previewLog.id ? "..." : t("history.copy_email")}
               </button>
               <button
                 onClick={() => setPreviewId(null)}

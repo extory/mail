@@ -1,6 +1,7 @@
 import OpenAI from "openai";
 import { GoogleGenAI } from "@google/genai";
 import { providerKey, resolveAIModel } from "./ai-models";
+import { reuseInstructions, type ReuseMode, type EmailLanguage } from "./email-reuse";
 import type { AISelection } from "./ai-model-types";
 
 const SYSTEM_PROMPT = `You are an expert email newsletter writer. Generate a complete HTML email based on the user's topic.
@@ -42,6 +43,7 @@ ${images.map((img, i) => `  [Image ${i + 1}]
     ${img.description ? `Description / Intent: ${img.description}` : `Description: (none — infer from context)`}`).join("\n\n")}`;
 
 interface GenerateOptions extends AISelection {
+  reuse?: { mode: ReuseMode; language: EmailLanguage };
   useName?: boolean;
   images?: ImageInput[];
 }
@@ -52,6 +54,7 @@ function buildSystemPrompt(options: GenerateOptions): string {
   if (options.images && options.images.length > 0) {
     prompt += IMAGE_ADDITION(options.images);
   }
+  if (options.reuse) prompt += "\n" + reuseInstructions(options.reuse.mode, options.reuse.language);
   return prompt;
 }
 

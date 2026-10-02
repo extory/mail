@@ -135,6 +135,11 @@ export function getDb(): Database.Database {
       `);
     }
 
+    const draftColumns = db.prepare("PRAGMA table_info(drafts)").all() as { name: string }[];
+    if (!draftColumns.some(column => column.name === "source_send_log_id")) {
+      db.exec("ALTER TABLE drafts ADD COLUMN source_send_log_id INTEGER");
+    }
+
     // Migration: add note column to draft_revisions if missing
     const cols = db.prepare("PRAGMA table_info(draft_revisions)").all() as { name: string }[];
     if (!cols.some((c) => c.name === "note")) {
@@ -666,6 +671,22 @@ export function addSendLog(
   return db
     .prepare("SELECT * FROM send_log WHERE id = ?")
     .get(result.lastInsertRowid) as SendLog;
+}
+
+export function getSendLog(id: number): SendLog | undefined {
+  return getDb().prepare("SELECT * FROM send_log WHERE id = ?").get(id) as SendLog | undefined;
+}
+
+export function copySendToDraft(id: number): Draft | undefined {
+  const db = getDb();
+  return db.transaction(() => {
+    const source = getSendLog(id);
+    if (!source) return undefined;
+    const draft = saveDraft(source.subject, source.html_content, "");
+    db.prepare("UPDATE drafts SET source_send_log_id = ? WHERE id = ?").run(id,draft.id);
+    addDraftRevision(draft.id,source.subject,source.html_content,"","copied");
+    return getDraft(draft.id);
+  })();
 }
 
 export function getSendLogs(): SendLog[] {
