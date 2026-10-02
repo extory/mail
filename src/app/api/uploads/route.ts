@@ -11,7 +11,7 @@ export async function POST(request: NextRequest) {
   const formData = await request.formData();
   const file = formData.get("file") as File | null;
 
-  if (!file) {
+  if (!(file instanceof File)) {
     return Response.json({ error: "File is required" }, { status: 400 });
   }
   if (!ALLOWED_TYPES.includes(file.type)) {
@@ -21,7 +21,7 @@ export async function POST(request: NextRequest) {
     return Response.json({ error: "File must be under 5MB" }, { status: 400 });
   }
 
-  const ext = file.name.split(".").pop()?.toLowerCase() || "png";
+  const ext = ({ "image/jpeg": "jpg", "image/png": "png", "image/gif": "gif", "image/webp": "webp" } as Record<string, string>)[file.type];
   const filename = `${randomBytes(12).toString("hex")}.${ext}`;
 
   await mkdir(UPLOAD_DIR, { recursive: true });

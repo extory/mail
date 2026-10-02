@@ -36,3 +36,12 @@ export interface SendLog {
   status: "sent" | "failed" | "partial";
   prompt: string | null;
 }
+
+export interface SavedImage {
+  id: number;
+  url: string;
+  name: string;
+  description: string;
+  created_at: string;
+  updated_at: string;
+}

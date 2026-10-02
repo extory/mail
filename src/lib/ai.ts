@@ -1,5 +1,7 @@
 import OpenAI from "openai";
 import { GoogleGenAI } from "@google/genai";
+import { providerKey, resolveAIModel } from "./ai-models";
+import type { AISelection } from "./ai-model-types";
 
 const SYSTEM_PROMPT = `You are an expert email newsletter writer. Generate a complete HTML email based on the user's topic.
 
@@ -39,9 +41,7 @@ ${images.map((img, i) => `  [Image ${i + 1}]
     URL: ${img.url}
     ${img.description ? `Description / Intent: ${img.description}` : `Description: (none — infer from context)`}`).join("\n\n")}`;
 
-type Provider = "openai" | "gemini";
-
-interface GenerateOptions {
+interface GenerateOptions extends AISelection {
   useName?: boolean;
   images?: ImageInput[];
 }
@@ -55,25 +55,21 @@ function buildSystemPrompt(options: GenerateOptions): string {
   return prompt;
 }
 
-function getProvider(): Provider {
-  if (process.env.OPENAI_API_KEY && !process.env.OPENAI_API_KEY.includes("your-key")) {
-    return "openai";
-  }
-  if (process.env.GEMINI_API_KEY && !process.env.GEMINI_API_KEY.includes("your-key")) {
-    return "gemini";
-  }
-  throw new Error("No AI API key configured. Set OPENAI_API_KEY or GEMINI_API_KEY in .env.local");
+function getOpenAIOptions(model: string, task: "generate" | "edit") {
+  const reasoning = Number(model.match(/^gpt-(\d+)/)?.[1] || 0) >= 5;
+  return {
+    model,
+    max_output_tokens: reasoning
+      ? (task === "generate" ? 16384 : 8192)
+      : (task === "generate" ? 4096 : 2048),
+    ...(reasoning ? { reasoning: { effort: "low" as const } } : {}),
+  };
 }
 
-function getOpenAIModel(): string {
-  return process.env.OPENAI_MODEL?.trim() || "gpt-4.1";
-}
-
-async function generateWithOpenAI(prompt: string, systemPrompt: string): Promise<ReadableStream> {
-  const client = new OpenAI();
+async function generateWithOpenAI(prompt: string, systemPrompt: string, model: string): Promise<ReadableStream> {
+  const client = new OpenAI({ apiKey: providerKey("openai") });
   const stream = await client.responses.create({
-    model: getOpenAIModel(),
-    max_output_tokens: 4096,
+    ...getOpenAIOptions(model, "generate"),
     instructions: systemPrompt,
     input: prompt,
     stream: true,
@@ -116,24 +112,28 @@ async function generateWithOpenAI(prompt: string, systemPrompt: string): Promise
   });
 }
 
-async function generateWithGemini(prompt: string, systemPrompt: string): Promise<ReadableStream> {
-  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
+async function generateWithGemini(prompt: string, systemPrompt: string, model: string): Promise<ReadableStream> {
+  const ai = new GoogleGenAI({ apiKey: providerKey("gemini")! });
+  // Start the request before sending HTTP 200 so access/quota errors reach the UI.
+  const stream = await ai.models.generateContentStream({
+    model,
+    contents: `${systemPrompt}\n\n${prompt}`,
+  });
   const encoder = new TextEncoder();
-
   return new ReadableStream({
     async start(controller) {
       try {
-        const stream = await ai.models.generateContentStream({
-          model: "gemini-2.5-flash",
-          contents: `${systemPrompt}\n\n${prompt}`,
-        });
-
+        let hasText = false;
         for await (const chunk of stream) {
+          const reason = chunk.candidates?.[0]?.finishReason;
+          if (reason && reason !== "STOP") throw new Error("Gemini could not complete this email. Please try another request.");
           const text = chunk.text;
           if (text) {
+            hasText = true;
             controller.enqueue(encoder.encode(text));
           }
         }
+        if (!hasText) throw new Error("Gemini returned no email content.");
         controller.close();
       } catch (error) {
         controller.error(error);
@@ -146,13 +146,13 @@ export async function generateEmailStream(
   prompt: string,
   options: GenerateOptions = {}
 ): Promise<ReadableStream> {
-  const provider = getProvider();
+  const { provider, model } = await resolveAIModel(options);
   const systemPrompt = buildSystemPrompt(options);
 
   if (provider === "openai") {
-    return generateWithOpenAI(prompt, systemPrompt);
+    return generateWithOpenAI(prompt, systemPrompt, model);
   } else {
-    return generateWithGemini(prompt, systemPrompt);
+    return generateWithGemini(prompt, systemPrompt, model);
   }
 }
 
@@ -169,12 +169,11 @@ Rules:
 - Match the tone, style, and formality of the original.
 - {{name}} placeholders MUST remain exactly as {{name}} — do not replace them.`;
 
-async function editWithOpenAI(selection: string, instruction: string): Promise<string> {
-  const client = new OpenAI();
+async function editWithOpenAI(selection: string, instruction: string, model: string): Promise<string> {
+  const client = new OpenAI({ apiKey: providerKey("openai") });
   const userMessage = `Original selection:\n---\n${selection}\n---\n\nInstruction: ${instruction}\n\nProvide only the replacement text.`;
   const response = await client.responses.create({
-    model: getOpenAIModel(),
-    max_output_tokens: 2048,
+    ...getOpenAIOptions(model, "edit"),
     instructions: EDIT_SYSTEM_PROMPT,
     input: userMessage,
     store: false,
@@ -185,21 +184,24 @@ async function editWithOpenAI(selection: string, instruction: string): Promise<s
   return response.output_text;
 }
 
-async function editWithGemini(selection: string, instruction: string): Promise<string> {
-  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
+async function editWithGemini(selection: string, instruction: string, model: string): Promise<string> {
+  const ai = new GoogleGenAI({ apiKey: providerKey("gemini")! });
   const userMessage = `Original selection:\n---\n${selection}\n---\n\nInstruction: ${instruction}\n\nProvide only the replacement text.`;
   const response = await ai.models.generateContent({
-    model: "gemini-2.5-flash",
+    model,
     contents: `${EDIT_SYSTEM_PROMPT}\n\n${userMessage}`,
   });
-  return response.text || "";
+  if (!response.text?.trim() || (response.candidates?.[0]?.finishReason && response.candidates[0].finishReason !== "STOP")) {
+    throw new Error("Gemini could not complete the edit. Please try again.");
+  }
+  return response.text;
 }
 
-export async function editSelection(selection: string, instruction: string): Promise<string> {
-  const provider = getProvider();
+export async function editSelection(selection: string, instruction: string, options: AISelection = {}): Promise<string> {
+  const { provider, model } = await resolveAIModel(options);
   const result = provider === "openai"
-    ? await editWithOpenAI(selection, instruction)
-    : await editWithGemini(selection, instruction);
+    ? await editWithOpenAI(selection, instruction, model)
+    : await editWithGemini(selection, instruction, model);
   // Strip any residual code fences just in case
   return result
     .replace(/^\s*```[a-zA-Z]*\s*\n?/, "")
@@ -208,9 +210,5 @@ export async function editSelection(selection: string, instruction: string): Pro
 }
 
 export function getActiveProvider(): string {
-  try {
-    return getProvider();
-  } catch {
-    return "none";
-  }
+  return providerKey("openai") ? "openai" : providerKey("gemini") ? "gemini" : "none";
 }

@@ -1,6 +1,6 @@
 import Database from "better-sqlite3";
 import path from "path";
-import type { Subscriber, SendLog, Group, Draft } from "./types";
+import type { Subscriber, SendLog, Group, Draft, SavedImage } from "./types";
 
 const DB_PATH = path.join(process.cwd(), "data", "mail.db");
 
@@ -40,6 +40,14 @@ function getDb(): Database.Database {
         created_at TEXT DEFAULT (datetime('now')),
         status TEXT DEFAULT 'active',
         FOREIGN KEY (group_id) REFERENCES groups(id) ON DELETE SET NULL
+      );
+      CREATE TABLE IF NOT EXISTS saved_images (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        url TEXT NOT NULL UNIQUE,
+        name TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
       );
       CREATE TABLE IF NOT EXISTS drafts (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -930,4 +938,28 @@ export function getDashboardData() {
     emailStats,
     recentCampaigns,
   };
+}
+
+// Shared image library, like groups and drafts. Deleting an entry must not
+// remove its upload: previously sent emails and saved drafts still reference it.
+export function getSavedImages(): SavedImage[] {
+  return getDb().prepare("SELECT * FROM saved_images ORDER BY updated_at DESC, id DESC").all() as SavedImage[];
+}
+
+export function saveImage(url: string, name: string, description: string): SavedImage {
+  const db = getDb();
+  db.prepare(`INSERT INTO saved_images (url, name, description) VALUES (?, ?, ?)
+    ON CONFLICT(url) DO UPDATE SET name = excluded.name, description = excluded.description, updated_at = datetime('now')`)
+    .run(url, name, description);
+  return db.prepare("SELECT * FROM saved_images WHERE url = ?").get(url) as SavedImage;
+}
+
+export function updateSavedImage(id: number, name: string, description: string): SavedImage | undefined {
+  const db = getDb();
+  db.prepare("UPDATE saved_images SET name = ?, description = ?, updated_at = datetime('now') WHERE id = ?").run(name, description, id);
+  return db.prepare("SELECT * FROM saved_images WHERE id = ?").get(id) as SavedImage | undefined;
+}
+
+export function deleteSavedImage(id: number): boolean {
+  return getDb().prepare("DELETE FROM saved_images WHERE id = ?").run(id).changes > 0;
 }

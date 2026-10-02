@@ -9,9 +9,9 @@ export default function DashboardLayout({
 }) {
   return (
     <LocaleProvider>
-      <div className="flex min-h-screen bg-surface text-text-primary">
+      <div className="flex flex-col md:flex-row min-h-screen bg-surface text-text-primary">
         <Sidebar />
-        <main className="flex-1 p-10 overflow-auto">{children}</main>
+        <main className="min-w-0 flex-1 p-4 sm:p-6 lg:p-10 overflow-auto">{children}</main>
         <ComposeFab />
       </div>
     </LocaleProvider>

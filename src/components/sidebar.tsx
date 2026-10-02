@@ -111,9 +111,9 @@ export function Sidebar() {
   }, []);
 
   return (
-    <aside className="w-[240px] min-h-screen bg-white border-r border-border flex flex-col">
+    <aside className="w-full md:w-[240px] shrink-0 md:min-h-screen bg-white border-b md:border-b-0 md:border-r border-border flex flex-col">
       {/* Logo */}
-      <div className="px-5 py-6">
+      <div className="px-5 py-3 md:py-6">
         <div className="flex items-center gap-2.5">
           <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-brand-light to-accent flex items-center justify-center">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -142,7 +142,7 @@ export function Sidebar() {
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 px-3 flex flex-col gap-0.5">
+      <nav className="md:flex-1 px-3 flex overflow-x-auto md:flex-col gap-0.5">
         {navItems.map((item) => {
           const isActive =
             pathname === item.href ||
@@ -151,7 +151,7 @@ export function Sidebar() {
             <Link
               key={item.href}
               href={item.href}
-              className={`flex items-center gap-3 px-3 py-2 rounded-lg text-[13px] font-medium transition-all ${
+              className={`flex shrink-0 items-center whitespace-nowrap gap-3 px-3 py-2 rounded-lg text-[13px] font-medium transition-all ${
                 isActive
                   ? "bg-brand/[0.08] text-brand"
                   : "text-text-secondary hover:text-text-primary hover:bg-surface"
@@ -165,7 +165,7 @@ export function Sidebar() {
         {isAdmin && (
           <Link
             href="/invitations"
-            className={`flex items-center gap-3 px-3 py-2 rounded-lg text-[13px] font-medium transition-all mt-4 ${
+            className={`flex shrink-0 items-center whitespace-nowrap gap-3 px-3 py-2 rounded-lg text-[13px] font-medium transition-all md:mt-4 ${
               pathname === "/invitations"
                 ? "bg-brand/[0.08] text-brand"
                 : "text-text-secondary hover:text-text-primary hover:bg-surface"
@@ -185,10 +185,10 @@ export function Sidebar() {
       </nav>
 
       {/* Bottom controls */}
-      <div className="px-3 pb-5 space-y-2">
+      <div className="px-3 py-3 md:pt-0 md:pb-5 flex items-center gap-2 md:block md:space-y-2">
         <Link
           href="/settings"
-          className={`flex items-center gap-3 px-3 py-2 rounded-lg text-[13px] font-medium transition-all ${
+          className={`flex shrink-0 items-center whitespace-nowrap gap-3 px-3 py-2 rounded-lg text-[13px] font-medium transition-all ${
             pathname === "/settings"
               ? "bg-brand/[0.08] text-brand"
               : "text-text-secondary hover:text-text-primary hover:bg-surface"
@@ -205,7 +205,7 @@ export function Sidebar() {
         <select
           value={locale}
           onChange={(e) => setLocale(e.target.value as Locale)}
-          className="w-full text-[12px] text-text-secondary bg-surface border border-border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand transition-all"
+          className="w-auto min-w-0 md:w-full text-[12px] text-text-secondary bg-surface border border-border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand transition-all"
         >
           {locales.map((l) => (
             <option key={l.code} value={l.code}>
@@ -218,7 +218,7 @@ export function Sidebar() {
             await fetch("/api/auth/logout", { method: "POST" });
             window.location.href = "/";
           }}
-          className="w-full text-[12px] text-text-muted hover:text-danger px-3 py-2 rounded-lg hover:bg-surface transition-all text-left flex items-center gap-2"
+          className="w-auto min-w-0 md:w-full text-[12px] text-text-muted hover:text-danger px-3 py-2 rounded-lg hover:bg-surface transition-all text-left flex items-center gap-2"
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
             <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />

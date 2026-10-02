@@ -1,8 +1,10 @@
 import { NextRequest } from "next/server";
 import { editSelection } from "@/lib/ai";
 
+import { AISelectionError, parseAISelection } from "@/lib/ai-models";
+
 export async function POST(request: NextRequest) {
-  const { selection, instruction } = await request.json();
+  const { selection, instruction, provider, model } = await request.json();
 
   if (!selection || !instruction) {
     return Response.json(
@@ -18,10 +20,10 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const result = await editSelection(selection, instruction);
+    const result = await editSelection(selection, instruction, parseAISelection(provider, model));
     return Response.json({ result });
   } catch (err) {
-    const msg = err instanceof Error ? err.message : "Edit failed";
-    return Response.json({ error: msg }, { status: 500 });
+    const msg = err instanceof AISelectionError ? err.message : "AI edit failed. Check model access and quota, or select another model.";
+    return Response.json({ error: msg }, { status: err instanceof AISelectionError ? 400 : 502 });
   }
 }

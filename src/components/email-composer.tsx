@@ -2,11 +2,14 @@
 
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
+import type { AIModelCatalog, AIProvider } from "@/lib/ai-model-types";
 import type { Group } from "@/lib/types";
+import { ImageLibrary, ImageSavePrompt } from "./image-library";
 import { useLocale } from "./locale-provider";
 import { htmlToPlainLines, diffLines, diffStats, type DiffLine } from "@/lib/diff";
 
 interface UploadedImage {
+  libraryStatus?: "ask" | "saved" | "dismissed";
   url: string;
   filename: string;
   description: string;
@@ -27,6 +30,32 @@ export function EmailComposer() {
   const { t } = useLocale();
   const searchParams = useSearchParams();
   const router = useRouter();
+  const [aiCatalog, setAiCatalog] = useState<AIModelCatalog | null>(null);
+  const [aiProvider, setAiProvider] = useState<AIProvider>("openai");
+  const [aiModel, setAiModel] = useState("auto");
+  const [modelsLoading, setModelsLoading] = useState(true);
+  const [modelsError, setModelsError] = useState(false);
+  const loadModels = useCallback(async () => {
+    setModelsLoading(true);
+    setModelsError(false);
+    try {
+      const res = await fetch("/api/ai/models", { cache: "no-store" });
+      if (!res.ok) throw new Error("Model list failed");
+      const catalog: AIModelCatalog = await res.json();
+      setAiCatalog(catalog);
+      setAiModel("auto");
+      setAiProvider(current => catalog.providers.some(p => p.provider === current && p.models.length)
+        ? current : catalog.providers.find(p => p.models.length)?.provider || current);
+    } catch {
+      setModelsError(true);
+    } finally {
+      setModelsLoading(false);
+    }
+  }, []);
+  useEffect(() => { void loadModels(); }, [loadModels]);
+  const providerModels = aiCatalog?.providers.find(p => p.provider === aiProvider);
+  const aiReady = !modelsLoading && !modelsError && Boolean(providerModels?.models.length)
+    && (aiModel === "auto" || Boolean(providerModels?.models.some(m => m.id === aiModel)));
   const [draftId, setDraftId] = useState<number | null>(null);
   const [prompt, setPrompt] = useState("");
   const [subject, setSubject] = useState("");
@@ -42,6 +71,8 @@ export function EmailComposer() {
   const [inlineEditMode, setInlineEditMode] = useState(false);
   const [useName, setUseName] = useState(false);
   const [images, setImages] = useState<UploadedImage[]>([]);
+  const [imageLibraryVersion, setImageLibraryVersion] = useState(0);
+  const [imageUploadError, setImageUploadError] = useState(false);
   const [uploading, setUploading] = useState(false);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const [groups, setGroups] = useState<Group[]>([]);
@@ -183,7 +214,7 @@ export function EmailComposer() {
   );
 
   const handleGenerate = useCallback(async () => {
-    if (!prompt.trim()) return;
+    if (!prompt.trim() || !aiReady) return;
     setGenerating(true);
     setHtmlContent("");
     setSubject("");
@@ -197,13 +228,18 @@ export function EmailComposer() {
         body: JSON.stringify({
           prompt,
           useName,
+          provider: aiProvider,
+          model: aiModel,
           images: images.length > 0
             ? images.map((img) => ({ url: img.url, description: img.description || undefined }))
             : undefined,
         }),
       });
 
-      if (!res.ok) throw new Error("Failed to generate");
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "Failed to generate");
+      }
 
       const reader = res.body?.getReader();
       if (!reader) throw new Error("No reader");
@@ -316,13 +352,13 @@ export function EmailComposer() {
       }
     } catch (err) {
       console.error(err);
-      setSendResult(t("compose.error_generate"));
+      setSendResult(err instanceof Error ? err.message : t("compose.error_generate"));
     } finally {
       setGenerating(false);
     }
     // Ask the user whether to keep this as a draft.
     setShowSavePrompt(true);
-  }, [prompt, useName, images, t, ensureDraftId]);
+  }, [prompt, useName, images, t, ensureDraftId, aiProvider, aiModel, aiReady]);
 
   const handleSave = async () => {
     setSaving(true);
@@ -672,6 +708,7 @@ export function EmailComposer() {
     const files = e.target.files;
     if (!files || files.length === 0) return;
     setUploading(true);
+    setImageUploadError(false);
     for (const file of Array.from(files)) {
       try {
         let uploadBlob: Blob = file;
@@ -690,11 +727,11 @@ export function EmailComposer() {
         formData.append("file", uploadBlob, uploadName);
         const res = await fetch("/api/uploads", { method: "POST", body: formData });
         const data = await res.json();
-        if (data.url) {
-          setImages((prev) => [...prev, { url: data.url, filename: data.filename, description: "" }]);
-        }
+        if (!res.ok || !data.url) throw new Error("Upload failed");
+        setImages((prev) => [...prev, { url: data.url, filename: file.name.slice(0, 120), description: "", libraryStatus: "ask" }]);
       } catch (err) {
         console.error("Upload failed:", err);
+        setImageUploadError(true);
       }
     }
     setUploading(false);
@@ -1150,14 +1187,14 @@ export function EmailComposer() {
   }, [htmlContent, showHtml, inlineEditMode, t]);
 
   const applyEdit = async () => {
-    if (!selectedText || !editInstruction.trim()) return;
+    if (!selectedText || !editInstruction.trim() || !aiReady) return;
     setEditing(true);
     setEditError(null);
     try {
       const res = await fetch("/api/compose/edit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ selection: selectedText, instruction: editInstruction.trim() }),
+        body: JSON.stringify({ selection: selectedText, instruction: editInstruction.trim(), provider: aiProvider, model: aiModel }),
       });
       const data = await res.json();
       if (data.error) {
@@ -1255,6 +1292,43 @@ export function EmailComposer() {
     <div className={`grid gap-5 ${hasOutput ? "lg:grid-cols-[minmax(360px,520px)_1fr]" : "lg:grid-cols-1"}`}>
       {/* LEFT: Prompt + options */}
       <div className="space-y-5">
+      <div className="bg-surface-card border border-border rounded-xl p-5 space-y-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <label className="min-w-0 text-[12px] font-medium text-text-secondary">
+            {t("compose.ai_provider")}
+            <select aria-label={t("compose.ai_provider")} value={aiProvider}
+              onChange={e => { setAiProvider(e.target.value as AIProvider); setAiModel("auto"); }}
+              disabled={generating || editing || modelsLoading}
+              className={`${inputClass} w-full mt-1`}>
+              {(["openai", "gemini"] as const).map(provider => {
+                const entry = aiCatalog?.providers.find(p => p.provider === provider);
+                return <option key={provider} value={provider} disabled={!entry?.models.length}>
+                  {provider === "openai" ? "OpenAI" : "Google Gemini"}
+                  {entry && !entry.configured ? ` · ${t("compose.ai_unconfigured")}` : entry?.error ? ` · ${t("compose.ai_unavailable")}` : ""}
+                </option>;
+              })}
+            </select>
+          </label>
+          <label className="min-w-0 text-[12px] font-medium text-text-secondary">
+            {t("compose.ai_model")}
+            <select aria-label={t("compose.ai_model")} value={aiModel}
+              onChange={e => setAiModel(e.target.value)}
+              disabled={generating || editing || modelsLoading || !providerModels?.models.length}
+              className={`${inputClass} w-full mt-1`}>
+              <option value="auto">{modelsLoading ? t("compose.ai_loading") : t("compose.ai_latest", { model: providerModels?.latest || "—" })}</option>
+              {providerModels?.models.map(model => <option key={model.id} value={model.id}>
+                {model.id}{model.preview ? ` · ${t("compose.ai_preview")}` : ""}
+              </option>)}
+            </select>
+          </label>
+        </div>
+        <p className="text-[11px] leading-relaxed text-text-muted">{t("compose.ai_hint")}</p>
+        {modelsError && <p role="alert" className="text-[12px] text-red-600">{t("compose.ai_failed")}</p>}
+        {aiCatalog?.providers.filter(p => p.error).map(p => <p role="alert" key={p.provider} className="text-[12px] text-red-600">{p.provider}: {t("compose.ai_failed")}</p>)}
+        {aiCatalog && aiCatalog.providers.every(p => !p.configured) && <p role="alert" className="text-[12px] text-red-600">{t("compose.ai_unconfigured")}</p>}
+        <button type="button" onClick={() => void loadModels()} disabled={modelsLoading || generating || editing}
+          className="text-[12px] text-brand disabled:opacity-40">{t("compose.ai_reload")}</button>
+      </div>
       {/* Prompt input */}
       <div className="bg-surface-card border border-border rounded-xl p-5">
         <label className="block text-[12px] font-medium text-text-secondary mb-2">
@@ -1299,7 +1373,7 @@ export function EmailComposer() {
           {images.length > 0 && (
             <div className="space-y-2 mt-2">
               {images.map((img, i) => (
-                <div key={i} className="flex items-start gap-3 p-2 border border-border rounded-lg bg-surface/50">
+                <div key={img.url} className="flex items-start gap-3 p-2 border border-border rounded-lg bg-surface/50">
                   <div className="relative w-16 h-16 rounded-lg overflow-hidden border border-border flex-shrink-0 bg-white">
                     <img src={img.url} alt="" className="w-full h-full object-cover" />
                   </div>
@@ -1307,12 +1381,23 @@ export function EmailComposer() {
                     <input
                       type="text"
                       value={img.description}
+                      maxLength={1000}
                       onChange={(e) => updateImageDescription(i, e.target.value)}
                       placeholder={t("compose.image_desc_placeholder")}
                       disabled={generating}
                       className="w-full border border-border rounded-md px-2.5 h-[32px] text-[12px] bg-white focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand transition-all placeholder:text-text-muted"
                     />
                     <p className="text-[10px] text-text-muted mt-1 truncate">{img.filename}</p>
+                    {img.libraryStatus === "ask" && <ImageSavePrompt url={img.url} filename={img.filename} description={img.description} disabled={generating}
+                      onSaved={() => {
+                        setImages(prev => prev.map(item => item.url === img.url ? { ...item, libraryStatus: "saved" } : item));
+                        setImageLibraryVersion(version => version + 1);
+                      }}
+                      onSkip={() => setImages(prev => prev.map(item => item.url === img.url ? { ...item, libraryStatus: "dismissed" } : item))} />}
+                    {img.libraryStatus === "saved" && <p className="mt-1 text-[11px] text-brand">{t("images.saved")}</p>}
+                    {img.libraryStatus === "dismissed" && <button type="button" disabled={generating}
+                      onClick={() => setImages(prev => prev.map(item => item.url === img.url ? { ...item, libraryStatus: "ask" } : item))}
+                      className="mt-1 text-[11px] text-brand">{t("images.save")}</button>}
                   </div>
                   <button
                     onClick={() => removeImage(i)}
@@ -1330,6 +1415,13 @@ export function EmailComposer() {
           )}
         </div>
 
+        {imageUploadError && <p role="alert" className="mt-2 text-[12px] text-red-600">{t("images.upload_error")}</p>}
+        <ImageLibrary disabled={generating || editing} refreshKey={imageLibraryVersion} selectedUrls={images.map(img => img.url)}
+          onUse={image => setImages(prev => prev.some(item => item.url === image.url) ? prev : [...prev, {
+            url: image.url, filename: image.name, description: image.description, libraryStatus: "saved",
+          }])}
+          onDeleted={url => setImages(prev => prev.map(item => item.url === url ? { ...item, libraryStatus: "dismissed" } : item))} />
+
         <div className="mt-3 flex items-center gap-2 flex-wrap">
           <label className="flex items-center gap-1.5 text-[13px] text-text-secondary cursor-pointer select-none mr-2">
             <input
@@ -1343,7 +1435,7 @@ export function EmailComposer() {
           </label>
           <button
             onClick={handleGenerate}
-            disabled={generating || !prompt.trim()}
+            disabled={generating || editing || !prompt.trim() || !aiReady}
             className="bg-gradient-to-r from-brand-light to-accent text-white px-6 py-2.5 rounded-lg text-[13px] font-medium hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
           >
             {generating ? (
@@ -1602,7 +1694,7 @@ export function EmailComposer() {
             />
             <button
               onClick={applyEdit}
-              disabled={editing || !editInstruction.trim()}
+              disabled={editing || generating || !editInstruction.trim() || !aiReady}
               className="bg-brand text-white px-5 h-[38px] rounded-lg text-[13px] font-medium hover:bg-brand-dark disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center gap-1.5"
             >
               {editing ? (
