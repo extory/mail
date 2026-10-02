@@ -1,10 +1,12 @@
-import { Resend } from "resend";
+import { randomUUID } from "node:crypto";
+import { Resend, type CreateEmailOptions } from "resend";
 import { buildUnsubscribeUrl, wrapHtmlWithUnsubscribeFooter } from "./unsubscribe";
-import { saveSentEmail } from "./db";
+import { getSubscribers } from "./db";
+import { initializeSend, getSendReport, claimSend, heartbeatSend, finishSend, setRecipientResult, recipientProblem, type TrackedRecipient } from "./send-tracking";
 import { readFile } from "fs/promises";
 import path from "path";
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+const client = () => new Resend(process.env.RESEND_API_KEY);
 
 const SENDER_EMAIL = process.env.SENDER_EMAIL || "onboarding@resend.dev";
 const SENDER_NAME = process.env.SENDER_NAME || "Newsletter";
@@ -100,116 +102,97 @@ export async function sendBulkEmails(
   recipients: Recipient[],
   sendLogId: number,
   options: { embedImages?: boolean } = {}
-): Promise<{ success: number; failed: number; error?: string }> {
-  const BATCH_SIZE = 100;
-  let success = 0;
-  let failed = 0;
+) {
+  initializeSend(sendLogId, recipients, options.embedImages === true);
+  return retryUnsentEmails(sendLogId);
+}
+
+export async function retryUnsentEmails(sendLogId: number) {
+  const token = claimSend(sendLogId);
+  if (!token) throw new Error("A send is already in progress");
   let lastError: string | undefined;
-
-  // Defensive: strip any residual markdown code fences
-  htmlContent = stripCodeFences(htmlContent);
-
-  // If CID embedding requested, prepare HTML + attachments once
-  // (same for every recipient — content is identical except {{name}})
-  let cidHtml: string | null = null;
-  let cidAttachments: ResendAttachment[] = [];
-  if (options.embedImages) {
-    const result = await embedImagesAsCid(htmlContent);
-    cidHtml = result.html;
-    cidAttachments = result.attachments;
-  }
-
-  for (let i = 0; i < recipients.length; i += BATCH_SIZE) {
-    const batch = recipients.slice(i, i + BATCH_SIZE);
-    const emails = batch.map((r) => {
-      const unsubUrl = buildUnsubscribeUrl(BASE_URL, r.email);
-      const baseContent = cidHtml ?? htmlContent;
-      const personalizedContent = baseContent.replace(/\{\{name\}\}/g, r.name || "Subscriber");
-      const html = wrapHtmlWithUnsubscribeFooter(personalizedContent, unsubUrl);
-      const payload: Record<string, unknown> = {
-        from: `${SENDER_NAME} <${SENDER_EMAIL}>`,
-        to: [r.email],
-        subject,
-        html,
-        headers: {
-          "List-Unsubscribe": `<${unsubUrl}>`,
-          "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
-        },
-      };
-      if (cidAttachments.length > 0) {
-        payload.attachments = cidAttachments;
+  try {
+    const report = getSendReport(sendLogId)!;
+    const resend = client();
+    const htmlContent = stripCodeFences(report.log.html_content);
+    const embedded = report.embedImages ? await embedImagesAsCid(htmlContent) : { html: htmlContent, attachments: [] };
+    const candidates = report.recipients.filter(r => r.state === "pending" || r.state === "failed");
+    const batchSize = embedded.attachments.length ? 1 : 100;
+    for (let start = 0; start < candidates.length; start += batchSize) {
+      heartbeatSend(sendLogId, token);
+      const active = new Set(getSubscribers().map(s => s.email.toLowerCase()));
+      const batch: TrackedRecipient[] = [];
+      for (const recipient of candidates.slice(start,start+batchSize)) {
+        const problem = recipientProblem(recipient.email);
+        if (problem) setRecipientResult(recipient,"blocked",problem);
+        else if (!active.has(recipient.email.toLowerCase())) setRecipientResult(recipient,"skipped","Subscriber removed, unsubscribed, or address changed");
+        else batch.push(recipient);
       }
-      return payload;
-    });
-
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const result = await resend.batch.send(emails as any);
-      if (result.error) {
-        console.error("[Resend batch error]", result.error);
-        lastError = result.error.message;
-        failed += batch.length;
-      } else if (result.data) {
-        success += batch.length;
-        // Resend batch.send response shape varies by SDK version:
-        // - v5+:   { data: { data: [{ id }, ...] } }
-        // - v6+:   { data: [{ id }, ...] }                  ← current
-        // - older: { data: [{ id }, ...] }
-        // Walk a few common shapes to find the array of {id} objects.
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const raw = result.data as any;
-        let dataArr: Array<{ id?: string }> = [];
-        if (Array.isArray(raw)) {
-          dataArr = raw;
-        } else if (Array.isArray(raw?.data)) {
-          dataArr = raw.data;
-        } else if (Array.isArray(raw?.results)) {
-          dataArr = raw.results;
-        } else if (Array.isArray(raw?.emails)) {
-          dataArr = raw.emails;
-        } else if (raw && typeof raw === "object") {
-          // Last resort: find the first array of objects that contain "id"
-          for (const v of Object.values(raw)) {
-            if (Array.isArray(v) && v.length > 0 && typeof v[0] === "object" && v[0] !== null && "id" in v[0]) {
-              dataArr = v as Array<{ id?: string }>;
-              break;
+      if (!batch.length) continue;
+      const emails: CreateEmailOptions[] = batch.map(r => {
+        const unsubUrl = buildUnsubscribeUrl(BASE_URL,r.email);
+        return { from: `${SENDER_NAME} <${SENDER_EMAIL}>`, to: [r.email], subject: report.log.subject,
+          tags: [{ name: "send_log_id", value: String(sendLogId) }, { name: "recipient_id", value: String(r.id) }],
+          html: wrapHtmlWithUnsubscribeFooter(embedded.html.replace(/\{\{name\}\}/g,r.name || "Subscriber"),unsubUrl),
+          headers: { "List-Unsubscribe": `<${unsubUrl}>`, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" },
+          ...(embedded.attachments.length ? { attachments: embedded.attachments } : {}),
+        };
+      });
+      for (const recipient of batch) setRecipientResult(recipient,"sending");
+      // Every known-rejected attempt gets a new key; uncertain attempts are never
+      // resent automatically, including after Resend's 24-hour deduplication TTL.
+      const idempotencyKey = `mail/${sendLogId}/${randomUUID()}`;
+      try {
+        const requestOptions = { idempotencyKey, signal: AbortSignal.timeout(120_000) };
+        const response = embedded.attachments.length
+          ? await resend.emails.send(emails[0], requestOptions)
+          : await resend.batch.send(emails, { ...requestOptions, batchValidation: "permissive" });
+        if (response.error) {
+          const status = response.error.statusCode;
+          const explicitRejections = ["validation_error", "rate_limit_exceeded", "daily_quota_exceeded", "monthly_quota_exceeded", "missing_api_key", "restricted_api_key", "invalid_api_key", "invalid_parameter", "missing_required_field"];
+          const certainRejection = typeof status === "number"
+            ? status >= 400 && status < 500 && status !== 408 && status !== 409
+            : explicitRejections.includes(response.error.name);
+          lastError = response.error.message;
+          for (const recipient of batch) setRecipientResult(recipient,certainRejection ? "failed" : "unknown",lastError);
+        } else {
+          const data = response.data as {id?: string; data?: {id: string}[]; errors?: {index:number;message:string}[] } | null;
+          const errors = data?.errors || [];
+          const ids = embedded.attachments.length ? (data?.id ? [{id:data.id}] : []) : data?.data;
+          const rejected = new Map(errors.map(error => [error.index,error.message]));
+          if (!ids || rejected.size !== errors.length || errors.some(e => !Number.isInteger(e.index) || e.index < 0 || e.index >= batch.length) ||
+              ids.length + errors.length !== batch.length || ids.some(item => !item.id)) {
+            lastError = "Unrecognized provider response; verify with Resend before resending";
+            for (const recipient of batch) setRecipientResult(recipient,"unknown",lastError);
+          } else {
+            let acceptedIndex = 0;
+            for (let index = 0; index < batch.length; index++) {
+              if (rejected.has(index)) {
+                lastError = rejected.get(index)!;
+                setRecipientResult(batch[index],"blocked",lastError);
+              } else {
+                setRecipientResult(batch[index],"accepted",undefined,ids[acceptedIndex++].id);
+              }
             }
           }
         }
-
-        let savedCount = 0;
-        for (let j = 0; j < dataArr.length; j++) {
-          const id = dataArr[j]?.id;
-          if (id && batch[j]) {
-            saveSentEmail(sendLogId, id, batch[j].email);
-            savedCount++;
-          }
-        }
-        if (savedCount === 0) {
-          // Log the full top-level shape so we can extend the parser if Resend
-          // changes the schema again. Truncated to 1KB so logs don't explode.
-          console.warn(
-            "[Resend] batch.send succeeded but no email IDs were saved.",
-            "Top-level keys:",
-            raw && typeof raw === "object" ? Object.keys(raw).join(",") : typeof raw,
-            "Sample:",
-            JSON.stringify(raw).slice(0, 1024)
-          );
-        } else {
-          console.log(`[Resend] Saved ${savedCount}/${batch.length} email IDs for send_log ${sendLogId}`);
+      } catch (error) {
+        lastError = error instanceof Error ? error.message : String(error);
+        for (const recipient of batch) {
+          // Do not overwrite accepted rows if persistence failed partway through.
+          const stored = getSendReport(sendLogId)!.recipients.find(r => r.id === recipient.id)!;
+          if (stored.state === "sending") setRecipientResult(recipient,"unknown",lastError);
         }
       }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.error("[Resend exception]", msg);
-      lastError = msg;
-      failed += batch.length;
+      if (start + batchSize < candidates.length) await new Promise(resolve => setTimeout(resolve,600));
     }
-
-    if (i + BATCH_SIZE < recipients.length) {
-      await new Promise((resolve) => setTimeout(resolve, 500));
-    }
+  } catch (error) {
+    lastError = error instanceof Error ? error.message : String(error);
+  } finally {
+    finishSend(sendLogId,token);
   }
-
-  return { success, failed, error: lastError };
+  const report = getSendReport(sendLogId)!;
+  return { sendLogId, success: report.success, failed: report.total-report.success,
+    total: report.total, retryable: report.retryable, blocked: report.blocked, unknown: report.unknown,
+    status: report.log.status, error: lastError };
 }

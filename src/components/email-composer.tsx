@@ -1,5 +1,7 @@
 "use client";
 
+import { SendReport } from "./send-report";
+
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import type { AIModelCatalog, AIProvider } from "@/lib/ai-model-types";
@@ -63,6 +65,7 @@ export function EmailComposer() {
   const [generating, setGenerating] = useState(false);
   const [sending, setSending] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [lastSendLogId, setLastSendLogId] = useState<number | null>(null);
   const [sendResult, setSendResult] = useState<string | null>(null);
   const [saveResult, setSaveResult] = useState<string | null>(null);
   const [showHtml, setShowHtml] = useState(false);
@@ -592,11 +595,12 @@ export function EmailComposer() {
         return;
       }
 
+      if (result.sendLogId) setLastSendLogId(result.sendLogId);
       const sentCount: number = Number(result?.success ?? 0);
       const failedCount: number = Number(result?.failed ?? 0);
       // Treat the request as a failure if the API returned an error message
       // OR if zero recipients actually went out.
-      if (result.error || sentCount === 0) {
+      if (!res.ok || sentCount === 0) {
         const reason = result.error
           ? result.error
           : failedCount > 0
@@ -608,6 +612,7 @@ export function EmailComposer() {
         if (failedCount > 0) {
           msg += t("compose.sent_failed", { failed: failedCount });
         }
+        if (result.error) msg += ` · ${result.error}`;
         setSendResult(msg);
         // Ask whether to keep or clear the revision history for this draft.
         if (draftId !== null) setShowSendKeepPrompt(true);
@@ -1884,6 +1889,7 @@ export function EmailComposer() {
                     ? t("compose.send_group")
                     : t("compose.send_all")}
             </button>
+            {lastSendLogId !== null && <SendReport key={lastSendLogId} id={lastSendLogId} onUpdated={() => setSendResult(null)} />}
             {sendResult && (
               <p className={`text-[13px] font-medium ${sendResult.startsWith("Error") ? "text-danger" : "text-success"}`}>
                 {sendResult}

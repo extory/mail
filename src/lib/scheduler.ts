@@ -6,8 +6,6 @@ import {
   addSendLog,
 } from "./db";
 import { sendBulkEmails } from "./resend";
-import Database from "better-sqlite3";
-import path from "path";
 
 let timer: NodeJS.Timeout | null = null;
 let running = false;
@@ -53,16 +51,6 @@ async function runOnce(): Promise<{ processed: number; details: Array<Record<str
             : result.success === 0
               ? "failed"
               : "partial";
-
-        // Update send_log status separately (mirrors /api/send)
-        const dbPath = path.join(process.cwd(), "data", "mail.db");
-        const db = new Database(dbPath);
-        try {
-          db.prepare("UPDATE send_log SET status = ?, recipient_count = ? WHERE id = ?")
-            .run(status, result.success, sendLog.id);
-        } finally {
-          db.close();
-        }
 
         markScheduledSendDone(
           job.id,

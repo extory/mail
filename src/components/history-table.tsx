@@ -1,5 +1,6 @@
 "use client";
 
+import { SendReport } from "./send-report";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import type { SendLog } from "@/lib/types";
@@ -11,6 +12,7 @@ export function HistoryTable() {
   const router = useRouter();
   const [logs, setLogs] = useState<SendLog[]>([]);
   const [loading, setLoading] = useState(true);
+  const [reportId, setReportId] = useState<number | null>(null);
   const [previewId, setPreviewId] = useState<number | null>(null);
   const [restoringId, setRestoringId] = useState<number | null>(null);
   const [page, setPage] = useState(1);
@@ -93,6 +95,7 @@ export function HistoryTable() {
                     </span>
                   </td>
                   <td className="px-5 py-3 text-right whitespace-nowrap">
+                    <button type="button" onClick={() => setReportId(reportId === log.id ? null : log.id)} className="text-brand text-[12px] mr-3">{t("send_report.title")}</button>
                     <button
                       onClick={() => setPreviewId(previewId === log.id ? null : log.id)}
                       className="text-brand hover:text-brand-dark text-[12px] font-medium mr-3 transition-colors"
@@ -120,6 +123,7 @@ export function HistoryTable() {
         </table>
       </div>
 
+      {reportId !== null && <SendReport key={reportId} id={reportId} onUpdated={() => { fetch("/api/history").then(res => res.json()).then(setLogs); }} />}
       <Pagination
         total={logs.length}
         page={page}

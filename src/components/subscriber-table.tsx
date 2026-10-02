@@ -285,11 +285,7 @@ export function SubscriberTable() {
   };
 
   const handleDownloadTemplate = () => {
-    const csv = `email,name,groups
-user@example.com,John Doe,VIP;Newsletter
-another@example.com,홍길동,Newsletter
-plain@example.com,,
-`;
+    const csv = "email,name,groups\n";
     // Prepend BOM so Excel opens UTF-8 CSV correctly (preserves Korean characters)
     const BOM = "﻿";
     const blob = new Blob([BOM + csv], { type: "text/csv;charset=utf-8;" });
