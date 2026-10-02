@@ -172,6 +172,22 @@ export function deleteGroup(id: number): void {
   db.prepare("DELETE FROM groups WHERE id = ?").run(id);
 }
 
+export function removeGroupMembers(groupId: number, subscriberIds: number[]): number | null {
+  const db = getDb();
+  return db.transaction(() => {
+    if (!db.prepare("SELECT id FROM groups WHERE id = ?").get(groupId)) return null;
+    const remove = db.prepare("DELETE FROM subscriber_groups WHERE group_id = ? AND subscriber_id = ?");
+    // Clear legacy membership too, so startup migration cannot restore it.
+    const clearLegacy = db.prepare("UPDATE subscribers SET group_id = NULL WHERE id = ? AND group_id = ?");
+    let removed = 0;
+    for (const id of new Set(subscriberIds)) {
+      removed += remove.run(groupId, id).changes;
+      clearLegacy.run(id, groupId);
+    }
+    return removed;
+  })();
+}
+
 // --- Subscribers ---
 
 interface RawSubscriberRow {
@@ -291,6 +307,17 @@ export function addSubscriber(email: string, name?: string, groupIds?: number[])
   }
 
   return getSubscriberById(sub.id)!;
+}
+
+export function updateSubscriberDetails(id: number, email: string, name: string): Subscriber | "duplicate" | undefined {
+  const db = getDb();
+  return db.transaction(() => {
+    if (!getSubscriberById(id)) return undefined;
+    const duplicate = db.prepare("SELECT id FROM subscribers WHERE email = ? COLLATE NOCASE AND id != ?").get(email, id);
+    if (duplicate) return "duplicate";
+    db.prepare("UPDATE subscribers SET email = ?, name = ? WHERE id = ?").run(email, name || null, id);
+    return getSubscriberById(id);
+  })();
 }
 
 export function updateSubscriberGroups(id: number, groupIds: number[]): void {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import type { Group, Subscriber } from "@/lib/types";
 import { useLocale } from "./locale-provider";
 
@@ -17,6 +17,45 @@ export function GroupManager() {
   const [adding, setAdding] = useState(false);
   const [addResult, setAddResult] = useState<string | null>(null);
 
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editEmail, setEditEmail] = useState("");
+  const [editName, setEditName] = useState("");
+  const [savingMember, setSavingMember] = useState(false);
+  const [editError, setEditError] = useState<"duplicate" | "save" | null>(null);
+  const savingMemberRef = useRef(false);
+
+  const handleSaveMember = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (editingId === null || savingMemberRef.current) return;
+    savingMemberRef.current = true;
+    setSavingMember(true);
+    setEditError(null);
+    try {
+      const res = await fetch(`/api/subscribers/${editingId}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: editEmail.trim(), name: editName.trim() }),
+      });
+      if (res.status === 409) { setEditError("duplicate"); return; }
+      if (!res.ok) throw new Error("Failed to save subscriber");
+      const updated: Subscriber = await res.json();
+      setMembers(prev => prev.map(member => member.id === updated.id ? updated : member));
+      setEditingId(null);
+    } catch { setEditError("save"); }
+    finally { savingMemberRef.current = false; setSavingMember(false); }
+  };
+
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [removing, setRemoving] = useState(false);
+  const [memberError, setMemberError] = useState<"load" | "remove" | null>(null);
+  const memberRequest = useRef(0);
+  const removingRef = useRef(false);
+  const selectAllRef = useRef<HTMLInputElement>(null);
+  const allSelected = members.length > 0 && selectedIds.size === members.length;
+
+  useEffect(() => {
+    if (selectAllRef.current) selectAllRef.current.indeterminate = selectedIds.size > 0 && !allSelected;
+  }, [selectedIds, allSelected, membersLoading]);
+
   const fetchGroups = async () => {
     const res = await fetch("/api/groups");
     setGroups(await res.json());
@@ -26,6 +65,13 @@ export function GroupManager() {
   useEffect(() => { fetchGroups(); }, []);
 
   const handleToggle = async (groupId: number) => {
+    if (adding || removingRef.current || savingMemberRef.current) return;
+    setEditingId(null);
+    setEditError(null);
+    const requestId = ++memberRequest.current;
+    setSelectedIds(new Set());
+    setMemberError(null);
+    setMembers([]);
     if (expandedId === groupId) {
       setExpandedId(null);
       setMembers([]);
@@ -37,14 +83,48 @@ export function GroupManager() {
     setAddEmails("");
     setAddResult(null);
     setMembersLoading(true);
-    const res = await fetch(`/api/subscribers?groupId=${groupId}`);
-    setMembers(await res.json());
-    setMembersLoading(false);
+    try {
+      const res = await fetch(`/api/subscribers?groupId=${groupId}`);
+      if (!res.ok) throw new Error("Failed to load members");
+      const data = await res.json();
+      if (requestId === memberRequest.current) setMembers(data);
+    } catch {
+      if (requestId === memberRequest.current) setMemberError("load");
+    } finally {
+      if (requestId === memberRequest.current) setMembersLoading(false);
+    }
+  };
+
+  const handleRemoveMembers = async (groupId: number) => {
+    if (removingRef.current || adding || editingId !== null || selectedIds.size === 0) return;
+    const ids = [...selectedIds];
+    if (!confirm(t("groups.remove_confirm", { count: ids.length }))) return;
+    removingRef.current = true;
+    setRemoving(true);
+    setMemberError(null);
+    try {
+      const res = await fetch(`/api/groups/${groupId}/members`, {
+        method: "DELETE", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids }),
+      });
+      if (!res.ok) throw new Error("Failed to remove members");
+      const { removed } = await res.json();
+      const deleted = new Set(ids);
+      setMembers(prev => prev.filter(member => !deleted.has(member.id)));
+      setSelectedIds(new Set());
+      setGroups(prev => prev.map(group => group.id === groupId
+        ? { ...group, subscriber_count: Math.max(0, (group.subscriber_count || 0) - removed) } : group));
+    } catch {
+      setMemberError("remove");
+    } finally {
+      removingRef.current = false;
+      setRemoving(false);
+    }
   };
 
   const handleAddToGroup = async (groupId: number) => {
     const raw = addEmails.trim();
-    if (!raw) return;
+    if (!raw || adding || removingRef.current || editingId !== null || membersLoading) return;
     // Split on commas, newlines, semicolons, or whitespace
     const emails = raw
       .split(/[\s,;\n]+/)
@@ -76,12 +156,20 @@ export function GroupManager() {
 
     setAddResult(t("groups.added_result", { added, failed }));
     setAddEmails("");
-    setAdding(false);
 
     // Refresh members and group counts
-    const res = await fetch(`/api/subscribers?groupId=${groupId}`);
-    setMembers(await res.json());
-    fetchGroups();
+    try {
+      const res = await fetch(`/api/subscribers?groupId=${groupId}`);
+      if (!res.ok) throw new Error("Failed to load members");
+      setMembers(await res.json());
+      setSelectedIds(new Set());
+      setMemberError(null);
+      await fetchGroups();
+    } catch {
+      setMemberError("load");
+    } finally {
+      setAdding(false);
+    }
     setTimeout(() => setAddResult(null), 4000);
   };
 
@@ -105,11 +193,14 @@ export function GroupManager() {
 
   const handleDelete = async (id: number, e: React.MouseEvent) => {
     e.stopPropagation();
+    if (adding || removingRef.current || savingMemberRef.current) return;
     if (!confirm(t("groups.delete_confirm"))) return;
     await fetch(`/api/groups/${id}`, { method: "DELETE" });
     if (expandedId === id) {
+      ++memberRequest.current;
       setExpandedId(null);
       setMembers([]);
+      setSelectedIds(new Set());
     }
     fetchGroups();
   };
@@ -195,6 +286,7 @@ export function GroupManager() {
                   <div className="flex items-center gap-2">
                     <button
                       onClick={(e) => handleDelete(group.id, e)}
+                      disabled={adding || removing || editingId !== null}
                       className="text-text-muted hover:text-danger text-[12px] transition-colors"
                     >
                       {t("delete")}
@@ -222,13 +314,13 @@ export function GroupManager() {
                           onChange={(e) => setAddEmails(e.target.value)}
                           placeholder={t("groups.add_subscribers_placeholder")}
                           rows={2}
-                          disabled={adding}
+                          disabled={adding || removing || editingId !== null}
                           className="flex-1 border border-border rounded-lg px-3 py-2 text-[13px] bg-white focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand transition-all placeholder:text-text-muted resize-y"
                         />
                         <button
                           type="button"
                           onClick={() => handleAddToGroup(group.id)}
-                          disabled={adding || !addEmails.trim()}
+                          disabled={adding || removing || editingId !== null || membersLoading || !addEmails.trim()}
                           className="bg-brand text-white px-4 py-2 rounded-lg text-[13px] font-medium hover:bg-brand-dark disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex-shrink-0"
                         >
                           {adding ? "..." : t("add")}
@@ -240,29 +332,81 @@ export function GroupManager() {
                       )}
                     </div>
 
+                    {editingId !== null && (
+                      <form onSubmit={handleSaveMember} className="m-5 rounded-lg border border-brand/20 bg-surface/50 p-4 space-y-3">
+                        <h4 className="text-[13px] font-medium">{t("groups.edit_member")}</h4>
+                        <p className="text-[12px] text-text-secondary">{t("groups.edit_hint")}</p>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <label className="text-[12px] min-w-0">{t("subscribers.email")}
+                            <input type="email" value={editEmail} onChange={e => setEditEmail(e.target.value)} required maxLength={254} disabled={savingMember}
+                              className="mt-1 w-full rounded-lg border border-border bg-white px-3 py-2 text-[13px]" />
+                          </label>
+                          <label className="text-[12px] min-w-0">{t("subscribers.name")}
+                            <input type="text" value={editName} onChange={e => setEditName(e.target.value)} maxLength={200} disabled={savingMember}
+                              className="mt-1 w-full rounded-lg border border-border bg-white px-3 py-2 text-[13px]" />
+                          </label>
+                        </div>
+                        {editError && <p role="alert" className="text-[12px] text-danger">{t(editError === "duplicate" ? "groups.duplicate_email" : "groups.edit_error")}</p>}
+                        <div className="flex gap-3">
+                          <button type="submit" disabled={savingMember || !editEmail.trim()} className="rounded-lg bg-brand text-white px-4 py-2 text-[12px] disabled:opacity-40">{savingMember ? t("loading") : t("save")}</button>
+                          <button type="button" disabled={savingMember} onClick={() => { setEditingId(null); setEditError(null); }} className="px-3 py-2 text-[12px]">{t("cancel")}</button>
+                        </div>
+                      </form>
+                    )}
+
+                    {memberError && <p role="alert" className="px-5 py-3 text-[13px] text-danger">{t(memberError === "load" ? "groups.load_error" : "groups.remove_error")}</p>}
                     {membersLoading ? (
                       <p className="text-text-muted text-[13px] p-5">{t("loading")}</p>
-                    ) : members.length === 0 ? (
+                    ) : memberError === "load" ? null : members.length === 0 ? (
                       <p className="text-text-muted text-[13px] p-5">{t("subscribers.no_subscribers")}</p>
                     ) : (
+                      <>
+                      <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3">
+                        <span role="status" className="text-[13px] text-text-secondary">{t("groups.selected_count", { count: selectedIds.size })}</span>
+                        <button type="button" onClick={() => handleRemoveMembers(group.id)} disabled={adding || removing || editingId !== null || selectedIds.size === 0}
+                          className="rounded-lg border border-danger/30 px-3 py-2 text-[12px] text-danger disabled:opacity-40 disabled:cursor-not-allowed">
+                          {removing ? t("loading") : t("groups.remove_selected")}
+                        </button>
+                      </div>
+                      <div className="overflow-x-auto">
                       <table className="w-full text-[13px]">
                         <thead>
                           <tr className="bg-surface">
+                            <th className="w-12 px-4 py-2.5">
+                              <input ref={selectAllRef} type="checkbox" aria-label={t("groups.select_all")} checked={allSelected} disabled={adding || removing || editingId !== null}
+                                onChange={e => setSelectedIds(e.target.checked ? new Set(members.map(member => member.id)) : new Set())}
+                                className="h-4 w-4 accent-brand" />
+                            </th>
                             <th className="text-left px-5 py-2.5 font-medium text-text-secondary text-[12px]">{t("subscribers.email")}</th>
                             <th className="text-left px-5 py-2.5 font-medium text-text-secondary text-[12px]">{t("subscribers.name")}</th>
                             <th className="text-left px-5 py-2.5 font-medium text-text-secondary text-[12px]">{t("subscribers.added")}</th>
+                            <th className="px-5 py-2.5 text-[12px] font-medium text-text-secondary">{t("actions")}</th>
                           </tr>
                         </thead>
                         <tbody>
                           {members.map((sub) => (
                             <tr key={sub.id} className="border-t border-border-light">
+                              <td className="px-4 py-2.5">
+                                <input type="checkbox" aria-label={t("groups.select_member", { email: sub.email })} checked={selectedIds.has(sub.id)} disabled={adding || removing || editingId !== null}
+                                  onChange={e => {
+                                    const checked = e.target.checked;
+                                    setSelectedIds(prev => { const next = new Set(prev); if (checked) next.add(sub.id); else next.delete(sub.id); return next; });
+                                  }} className="h-4 w-4 accent-brand" />
+                              </td>
                               <td className="px-5 py-2.5 text-text-primary">{sub.email}</td>
                               <td className="px-5 py-2.5 text-text-secondary">{sub.name || "-"}</td>
                               <td className="px-5 py-2.5 text-text-muted">{new Date(sub.created_at).toLocaleDateString()}</td>
+                              <td className="px-5 py-2.5">
+                                <button type="button" disabled={adding || removing || editingId !== null}
+                                  onClick={() => { setEditingId(sub.id); setEditEmail(sub.email); setEditName(sub.name || ""); setEditError(null); }}
+                                  className="text-brand text-[12px] whitespace-nowrap disabled:opacity-40">{t("edit")}</button>
+                              </td>
                             </tr>
                           ))}
                         </tbody>
                       </table>
+                      </div>
+                      </>
                     )}
                   </div>
                 )}
