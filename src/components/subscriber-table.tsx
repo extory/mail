@@ -118,19 +118,42 @@ export function SubscriberTable() {
     fetchGroups();
   };
 
+  const [importing, setImporting] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
+
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const formData = new FormData();
-    formData.append("file", file);
-    if (newGroupIds.length > 0) formData.append("groupIds", newGroupIds.join(","));
-    const res = await fetch("/api/subscribers/import", { method: "POST", body: formData });
-    const result = (await res.json()) as ImportResultDetail;
-    setImportResult(result);
-    setShowSkipped((result.skipped_rows?.length ?? 0) > 0);
-    fetchSubscribers();
-    fetchGroups();
-    if (fileRef.current) fileRef.current.value = "";
+    if (importing) return;
+    setImporting(true);
+    setImportError(null);
+    setImportResult(null);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      if (newGroupIds.length > 0) formData.append("groupIds", newGroupIds.join(","));
+      const res = await fetch("/api/subscribers/import", { method: "POST", body: formData });
+      const result = await res.json();
+      if (!res.ok) {
+        const errors = {
+          unsupported_format: "subscribers.import_format_error",
+          file_too_large: "subscribers.import_size_error",
+          invalid_file: "subscribers.import_invalid_error",
+          empty_file: "subscribers.import_empty_error",
+          missing_email_column: "subscribers.import_header_error",
+        } as const;
+        setImportError(t(errors[result.error as keyof typeof errors] || "subscribers.import_error"));
+        return;
+      }
+      setImportResult(result as ImportResultDetail);
+      setShowSkipped((result.skipped_rows?.length ?? 0) > 0);
+      fetchSubscribers();
+      fetchGroups();
+    } catch { setImportError(t("subscribers.import_error")); }
+    finally {
+      setImporting(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
   };
 
   const retryRow = async (row: SkippedRow) => {
@@ -330,13 +353,14 @@ plain@example.com,,
               {t("add")}
             </button>
             <div className="h-5 w-px bg-border mx-1" />
-            <input ref={fileRef} type="file" accept=".csv" onChange={handleImport} className="hidden" />
+            <input ref={fileRef} type="file" accept=".csv,.xlsx" disabled={importing} onChange={handleImport} className="hidden" />
             <button
               type="button"
               onClick={() => fileRef.current?.click()}
+              disabled={importing}
               className="border border-border text-text-secondary px-4 py-2 rounded-lg text-[13px] font-medium hover:bg-surface hover:text-text-primary transition-colors"
             >
-              {t("subscribers.import")}
+              {importing ? t("loading") : t("subscribers.import")}
             </button>
             <button
               type="button"
@@ -354,6 +378,8 @@ plain@example.com,,
         </form>
       </div>
 
+      <p className="text-[12px] text-text-secondary">{t("subscribers.import_hint")}</p>
+      {importError && <p role="alert" className="text-[13px] text-danger">{importError}</p>}
       {/* Import result */}
       {importResult && (
         <div className="bg-surface-card border border-border rounded-xl p-5 space-y-3">
