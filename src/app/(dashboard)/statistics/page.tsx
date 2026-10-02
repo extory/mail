@@ -55,7 +55,7 @@ export default function StatisticsPage() {
   const hasData = overall && overall.total_sent > 0;
 
   return (
-    <div className="max-w-5xl">
+    <div className="max-w-6xl mx-auto">
       <h1 className="text-[22px] font-semibold text-text-primary tracking-tight">
         {t("stats.title")}
       </h1>

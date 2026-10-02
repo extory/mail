@@ -6,7 +6,7 @@ import { useLocale } from "@/components/locale-provider";
 export default function DraftsPage() {
   const { t } = useLocale();
   return (
-    <div className="max-w-4xl">
+    <div className="max-w-6xl mx-auto">
       <h1 className="text-[22px] font-semibold text-text-primary tracking-tight">
         {t("drafts.title")}
       </h1>

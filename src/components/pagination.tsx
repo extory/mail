@@ -36,7 +36,7 @@ export function Pagination({ total, page, pageSize, onPageChange, onPageSizeChan
 
   return (
     <div className="flex items-center justify-between flex-wrap gap-3 py-2">
-      <div className="flex items-center gap-3 text-[12px] text-text-secondary">
+      <div className="flex flex-wrap items-center gap-3 text-[12px] text-text-secondary">
         <span>
           {t("pagination.showing", { from: startItem, to: endItem, total })}
         </span>
@@ -46,7 +46,7 @@ export function Pagination({ total, page, pageSize, onPageChange, onPageSizeChan
           <select
             value={pageSize}
             onChange={(e) => onPageSizeChange(Number(e.target.value) as PageSize)}
-            className="border border-border rounded px-1.5 h-[26px] text-[12px] bg-white focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand transition-all"
+            className="border border-border rounded px-1.5 h-9 text-[12px] bg-white focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand transition-all"
           >
             {PAGE_SIZES.map((size) => (
               <option key={size} value={size}>
@@ -58,12 +58,12 @@ export function Pagination({ total, page, pageSize, onPageChange, onPageSizeChan
       </div>
 
       {totalPages > 1 && (
-        <div className="flex items-center gap-1">
+        <div className="flex flex-wrap items-center gap-1">
           <button
             onClick={() => onPageChange(Math.max(1, safePage - 1))}
             disabled={safePage <= 1}
-            className="h-7 w-7 flex items-center justify-center rounded-md text-text-secondary hover:bg-surface hover:text-text-primary disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-            aria-label="Previous"
+            className="h-9 w-9 flex items-center justify-center rounded-md text-text-secondary hover:bg-surface hover:text-text-primary disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+            aria-label={t("ux.previous")}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <polyline points="15 18 9 12 15 6" />
@@ -75,8 +75,9 @@ export function Pagination({ total, page, pageSize, onPageChange, onPageSizeChan
             ) : (
               <button
                 key={p}
+                aria-current={p === safePage ? "page" : undefined}
                 onClick={() => onPageChange(p)}
-                className={`h-7 min-w-[28px] px-2 rounded-md text-[12px] font-medium transition-colors ${
+                className={`h-9 min-w-9 px-2 rounded-md text-[12px] font-medium transition-colors ${
                   p === safePage
                     ? "bg-brand text-white"
                     : "text-text-secondary hover:bg-surface hover:text-text-primary"
@@ -89,8 +90,8 @@ export function Pagination({ total, page, pageSize, onPageChange, onPageSizeChan
           <button
             onClick={() => onPageChange(Math.min(totalPages, safePage + 1))}
             disabled={safePage >= totalPages}
-            className="h-7 w-7 flex items-center justify-center rounded-md text-text-secondary hover:bg-surface hover:text-text-primary disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-            aria-label="Next"
+            className="h-9 w-9 flex items-center justify-center rounded-md text-text-secondary hover:bg-surface hover:text-text-primary disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+            aria-label={t("ux.next")}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <polyline points="9 18 15 12 9 6" />

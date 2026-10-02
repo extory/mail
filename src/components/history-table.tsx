@@ -1,7 +1,7 @@
 "use client";
 
 import { SendReport } from "./send-report";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import type { SendLog } from "@/lib/types";
 import { useLocale } from "./locale-provider";
@@ -24,6 +24,11 @@ export function HistoryTable() {
       .then((res) => res.json())
       .then((data) => { setLogs(data); setLoading(false); });
   }, []);
+
+  const reportRef = useRef<HTMLDivElement>(null);
+  const previewRef = useRef<HTMLDivElement>(null);
+  useEffect(() => { if (reportId !== null) { reportRef.current?.scrollIntoView({ block: "start" }); reportRef.current?.focus({ preventScroll: true }); } }, [reportId]);
+  useEffect(() => { if (previewId !== null) { previewRef.current?.scrollIntoView({ block: "start" }); previewRef.current?.focus({ preventScroll: true }); } }, [previewId]);
 
   const restoreAsDraft = async (log: SendLog) => {
     if (restoringId !== null) return;
@@ -48,8 +53,8 @@ export function HistoryTable() {
   return (
     <div className="space-y-5">
       {copyError && <p role="alert" className="text-danger text-[13px]">{t("history.copy_error")}</p>}
-      <div className="bg-surface-card border border-border rounded-xl overflow-hidden">
-        <table className="w-full text-[13px]">
+      <div className="bg-surface-card border border-border rounded-xl overflow-x-auto">
+        <table className="min-w-[680px] w-full text-[13px]">
           <thead>
             <tr className="border-b border-border-light bg-surface">
               <th className="text-left px-5 py-3 font-medium text-text-secondary text-[12px]">{t("history.date")}</th>
@@ -86,10 +91,10 @@ export function HistoryTable() {
                             : "bg-warning/10 text-warning"
                       }`}
                     >
-                      {log.status}
+                      {log.status === "sent" ? t("scheduled.status.sent") : log.status === "failed" ? t("scheduled.status.failed") : log.status === "partial" ? t("ux.partial") : log.status}
                     </span>
                   </td>
-                  <td className="px-5 py-3 text-right whitespace-nowrap">
+                  <td className="px-5 py-3 text-right min-w-[240px]">
                     <button type="button" onClick={() => setReportId(reportId === log.id ? null : log.id)} className="text-brand text-[12px] mr-3">{t("send_report.title")}</button>
                     <button
                       onClick={() => setPreviewId(previewId === log.id ? null : log.id)}
@@ -118,7 +123,7 @@ export function HistoryTable() {
         </table>
       </div>
 
-      {reportId !== null && <SendReport key={reportId} id={reportId} onUpdated={() => { fetch("/api/history").then(res => res.json()).then(setLogs); }} />}
+      {reportId !== null && <div ref={reportRef} tabIndex={-1} className="scroll-mt-6" aria-label={t("send_report.title")}><SendReport key={reportId} id={reportId} onUpdated={() => { fetch("/api/history").then(res => res.json()).then(setLogs); }} /></div>}
       <Pagination
         total={logs.length}
         page={page}
@@ -128,8 +133,8 @@ export function HistoryTable() {
       />
 
       {previewLog && (
-        <div className="bg-surface-card border border-border rounded-xl overflow-hidden">
-          <div className="flex justify-between items-center px-5 py-3 border-b border-border-light bg-surface gap-3">
+        <div ref={previewRef} tabIndex={-1} aria-label={t("preview")} className="bg-surface-card border border-border rounded-xl overflow-x-auto">
+          <div className="flex flex-wrap justify-between items-center px-5 py-3 border-b border-border-light bg-surface gap-3">
             <span className="text-[13px] font-medium text-text-primary truncate">{previewLog.subject}</span>
             <div className="flex items-center gap-3 flex-shrink-0">
               <button

@@ -225,7 +225,7 @@ export function GroupManager() {
     <div className="space-y-5">
       {/* Create group form */}
       <div className="bg-surface-card border border-border rounded-xl p-5">
-        <form onSubmit={handleCreate} className="flex gap-3 items-end">
+        <form onSubmit={handleCreate} className="flex flex-wrap gap-3 items-end">
           <div className="flex-1 max-w-xs">
             <label className="block text-[12px] font-medium text-text-secondary mb-1.5">
               {t("groups.name")}
@@ -262,7 +262,7 @@ export function GroupManager() {
           <p className="text-text-muted text-[13px]">{t("groups.no_groups")}</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
           {groups.map((group, i) => {
             const isExpanded = expandedId === group.id;
             return (
@@ -274,22 +274,27 @@ export function GroupManager() {
               >
                 {/* Card header */}
                 <div
-                  className="p-5 flex justify-between items-start cursor-pointer"
-                  onClick={() => handleToggle(group.id)}
+                  className="p-5 flex justify-between items-start gap-3"
                 >
-                  <div className="flex items-center gap-3">
-                    <div className={`w-9 h-9 rounded-lg bg-gradient-to-br ${gradients[i % gradients.length]} flex items-center justify-center`}>
+                  <button type="button" aria-expanded={isExpanded} onClick={() => handleToggle(group.id)} className="flex min-w-0 flex-1 items-center gap-3 text-left">
+                    <div className={`shrink-0 w-9 h-9 rounded-lg bg-gradient-to-br ${gradients[i % gradients.length]} flex items-center justify-center`}>
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
                       </svg>
                     </div>
                     <div>
-                      <h3 className="text-[14px] font-semibold text-text-primary">{group.name}</h3>
+                      <h3 className="text-[14px] font-semibold text-text-primary break-all">{group.name}</h3>
                       <p className="text-[12px] text-text-secondary">
                         {t("groups.count", { count: group.subscriber_count })}
                       </p>
                     </div>
-                  </div>
+                    <svg
+                      width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+                      className={`ml-auto shrink-0 text-text-muted transition-transform ${isExpanded ? "rotate-180" : ""}`}
+                    >
+                      <polyline points="6 9 12 15 18 9" />
+                    </svg>
+                  </button>
                   <div className="flex items-center gap-2">
                     <button
                       onClick={(e) => handleDelete(group.id, e)}
@@ -298,12 +303,7 @@ export function GroupManager() {
                     >
                       {t("delete")}
                     </button>
-                    <svg
-                      width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-                      className={`text-text-muted transition-transform ${isExpanded ? "rotate-180" : ""}`}
-                    >
-                      <polyline points="6 9 12 15 18 9" />
-                    </svg>
+
                   </div>
                 </div>
 
@@ -311,18 +311,19 @@ export function GroupManager() {
                 {isExpanded && (
                   <div className="border-t border-border-light">
                     {/* Add subscribers to this group */}
-                    <div className="p-5 bg-surface/50 border-b border-border-light" onClick={(e) => e.stopPropagation()}>
-                      <label className="block text-[12px] font-medium text-text-secondary mb-1.5">
+                    <details className="p-5 bg-surface/50 border-b border-border-light">
+                      <summary className="cursor-pointer text-sm font-medium text-brand">
                         {t("groups.add_subscribers")}
-                      </label>
-                      <div className="flex gap-2 items-start">
+                      </summary>
+                      <div className="flex gap-2 items-start mt-3">
                         <textarea
+                          aria-label={t("groups.add_subscribers")}
                           value={addEmails}
                           onChange={(e) => setAddEmails(e.target.value)}
                           placeholder={t("groups.add_subscribers_placeholder")}
                           rows={2}
                           disabled={adding || removing || editingId !== null}
-                          className="flex-1 border border-border rounded-lg px-3 py-2 text-[13px] bg-white focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand transition-all placeholder:text-text-muted resize-y"
+                          className="min-w-0 flex-1 border border-border rounded-lg px-3 py-2 text-[13px] bg-white focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand transition-all placeholder:text-text-muted resize-y"
                         />
                         <button
                           type="button"
@@ -337,7 +338,7 @@ export function GroupManager() {
                       {addResult && (
                         <p className="text-[12px] text-success font-medium mt-2">{addResult}</p>
                       )}
-                    </div>
+                    </details>
 
                     <div className="px-5 pt-4 space-y-2">
                       <input type="search" value={memberSearch} aria-label={t("subscribers.search")} placeholder={t("subscribers.search")}

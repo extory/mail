@@ -1,5 +1,27 @@
 const translations = {
   en: {
+    "ux.compose_steps": "Email workflow",
+    "ux.write": "Write",
+    "ux.send": "Send settings",
+    "ux.image_options": "Image delivery options",
+    "ux.subscribers_help": "Search and select subscribers to manage groups or delete recipients.",
+    "ux.history_help": "Review recipient results, retry unsent emails, or copy a previous email.",
+    "ux.partial": "Partially sent",
+    "ux.previous": "Previous page",
+    "ux.next": "Next page",
+
+    "ux.overview": "Overview",
+    "ux.mail": "Email management",
+    "ux.audience": "Audience",
+    "ux.menu": "Menu",
+    "ux.language": "Language",
+    "ux.logout": "Log out",
+    "ux.skip": "Skip to content",
+    "ux.register": "Add subscribers / Import file",
+    "ux.start": "What would you like to do?",
+    "ux.continue": "Continue a saved email",
+    "ux.results": "Review results or reuse an email",
+
     // Common
     "app.title": "Mail Service",
     "app.description": "AI-powered newsletter and email sending service",
@@ -366,6 +388,28 @@ const translations = {
     "history.restore_confirm": "Copy this email into a new draft and open it in the composer?",
   },
   ko: {
+    "ux.compose_steps": "메일 작성 단계",
+    "ux.write": "내용 작성",
+    "ux.send": "발송 설정",
+    "ux.image_options": "이미지 발송 옵션",
+    "ux.subscribers_help": "이름·이메일로 검색하고 선택하여 그룹을 지정하거나 삭제하세요.",
+    "ux.history_help": "수신자별 결과와 미발송 내역을 확인하거나 기존 메일을 복사해 다시 작성하세요.",
+    "ux.partial": "일부 발송",
+    "ux.previous": "이전 페이지",
+    "ux.next": "다음 페이지",
+
+    "ux.overview": "전체 현황",
+    "ux.mail": "메일 관리",
+    "ux.audience": "수신자 관리",
+    "ux.menu": "메뉴",
+    "ux.language": "언어",
+    "ux.logout": "로그아웃",
+    "ux.skip": "본문으로 이동",
+    "ux.register": "구독자 등록 / 파일 업로드",
+    "ux.start": "어떤 작업을 시작할까요?",
+    "ux.continue": "저장한 메일 이어서 작성",
+    "ux.results": "발송 결과 확인 · 기존 메일 재사용",
+
     // Common
     "app.title": "메일 서비스",
     "app.description": "AI 기반 뉴스레터 및 이메일 발송 서비스",

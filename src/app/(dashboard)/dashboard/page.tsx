@@ -22,11 +22,6 @@ interface DashboardData {
   recentCampaigns: { subject: string; sent_at: string; recipient_count: number; status: string }[];
 }
 
-function pct(n: number, total: number): string {
-  if (total === 0) return "0%";
-  return (n / total * 100).toFixed(1) + "%";
-}
-
 export default function DashboardPage() {
   const { t } = useLocale();
   const [data, setData] = useState<DashboardData | null>(null);
@@ -44,14 +39,22 @@ export default function DashboardPage() {
   const maxGroupCount = Math.max(...data.groups.map((g) => g.count), 1);
 
   return (
-    <div className="max-w-5xl space-y-6">
+    <div className="max-w-6xl mx-auto space-y-6">
       <div>
         <h1 className="text-[22px] font-semibold text-text-primary tracking-tight">{t("nav.dashboard")}</h1>
         <p className="text-[14px] text-text-secondary mt-1">{t("app.description")}</p>
       </div>
 
+      <section className="rounded-xl border border-brand/15 bg-white p-5 sm:p-6">
+        <h2 className="font-semibold mb-4">{t("ux.start")}</h2>
+        <div className="grid sm:grid-cols-3 gap-3">
+          <Link href="/compose" className="rounded-lg bg-brand p-4 text-white font-semibold hover:bg-brand-dark">+ {t("compose.new")}</Link>
+          <Link href="/drafts" className="rounded-lg border border-border p-4 hover:bg-surface"><span className="block text-sm font-semibold">{t("nav.drafts")} · {data.draftCount}</span><span className="text-xs text-text-secondary">{t("ux.continue")}</span></Link>
+          <Link href="/history" className="rounded-lg border border-border p-4 hover:bg-surface"><span className="block text-sm font-semibold">{t("nav.history")}</span><span className="text-xs text-text-secondary">{t("ux.results")}</span></Link>
+        </div>
+      </section>
       {/* Top stat cards */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
         <StatCard href="/subscribers" label={t("dashboard.active_subscribers")} value={data.subscriberCount} color="#2B7FFF" />
         <StatCard label={t("dashboard.unsubscribed")} value={data.unsubscribedCount} color="#9ca3af" />
         <StatCard href="/groups" label={t("dashboard.groups_count")} value={data.groupCount} color="#22c55e" />
@@ -123,7 +126,7 @@ export default function DashboardPage() {
                         : c.status === "failed" ? "bg-[#ef4444]/10 text-[#ef4444]"
                           : "bg-[#f59e0b]/10 text-[#f59e0b]"
                     }`}>
-                      {c.status}
+                      {c.status === "sent" ? t("scheduled.status.sent") : c.status === "failed" ? t("scheduled.status.failed") : c.status === "partial" ? t("ux.partial") : c.status}
                     </span>
                   </div>
                 </div>
@@ -133,28 +136,7 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Quick actions */}
-      <div className="flex gap-3">
-        <Link
-          href="/compose"
-          className="flex items-center gap-2 bg-gradient-to-r from-[#2B7FFF] to-[#00C950] text-white px-5 py-2.5 rounded-lg text-[13px] font-medium hover:opacity-90 transition-opacity"
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
-          </svg>
-          {t("nav.compose")}
-        </Link>
-        <Link
-          href="/subscribers"
-          className="flex items-center gap-2 border border-border text-text-secondary px-5 py-2.5 rounded-lg text-[13px] font-medium hover:bg-surface hover:text-text-primary transition-colors"
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" />
-            <line x1="19" y1="8" x2="19" y2="14" /><line x1="22" y1="11" x2="16" y2="11" />
-          </svg>
-          {t("nav.subscribers")}
-        </Link>
-      </div>
+
     </div>
   );
 }

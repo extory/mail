@@ -303,9 +303,10 @@ export function SubscriberTable() {
   return (
     <div className="space-y-4">
       {/* Add subscriber */}
-      <div className="bg-surface-card border border-border rounded-xl p-5">
-        <form onSubmit={handleAdd} className="space-y-4">
-          <div className="grid grid-cols-3 gap-3">
+      <details className="bg-surface-card border border-border rounded-xl p-5">
+        <summary className="cursor-pointer text-sm font-semibold text-brand">{t("ux.register")}</summary>
+        <form onSubmit={handleAdd} className="space-y-4 mt-5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
             <div>
               <label className="block text-[12px] font-medium text-text-secondary mb-1.5">
                 {t("subscribers.email")}
@@ -362,7 +363,7 @@ export function SubscriberTable() {
               )}
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-3">
             <button
               type="submit"
               className="bg-brand text-white px-5 py-2 rounded-lg text-[13px] font-medium hover:bg-brand-dark transition-colors"
@@ -393,9 +394,8 @@ export function SubscriberTable() {
             </button>
           </div>
         </form>
-      </div>
-
-      <p className="text-[12px] text-text-secondary">{t("subscribers.import_hint")}</p>
+        <p className="mt-3 text-[12px] text-text-secondary">{t("subscribers.import_hint")}</p>
+      </details>
       {importError && <p role="alert" className="text-[13px] text-danger">{importError}</p>}
       {/* Import result */}
       {importResult && (
@@ -453,7 +453,7 @@ export function SubscriberTable() {
                       </button>
                     )}
                   </div>
-                  <table className="w-full text-[12px]">
+                  <table className="min-w-[680px] w-full text-[12px]">
                     <thead>
                       <tr className="bg-surface/50 border-b border-border-light">
                         <th className="text-left px-4 py-2 font-medium text-text-secondary">{t("subscribers.email")}</th>
@@ -532,7 +532,7 @@ export function SubscriberTable() {
       {listError && <p role="alert" className="text-danger text-[13px]">{t(listError === "load" ? "subscribers.load_error" : "subscribers.delete_error")}</p>}
       {/* Bulk actions bar */}
       {visibleSelected.length > 0 && (
-        <div className="flex items-center justify-between bg-brand/[0.06] border border-brand/20 rounded-xl px-4 py-2.5">
+        <div className="flex flex-wrap gap-3 items-center justify-between bg-brand/[0.06] border border-brand/20 rounded-xl px-4 py-2.5">
           <span className="text-[13px] font-medium text-text-primary">
             {t("subscribers.selected_count", { count: visibleSelected.length })}
           </span>
@@ -556,8 +556,8 @@ export function SubscriberTable() {
       )}
 
       {/* Table */}
-      <div className="bg-surface-card border border-border rounded-xl overflow-hidden">
-        <table className="w-full text-[13px]">
+      <div className="bg-surface-card border border-border rounded-xl overflow-x-auto">
+        <table className="min-w-[680px] w-full text-[13px]">
           <thead>
             <tr className="border-b border-border-light bg-surface">
               <th className="px-5 py-3 w-10">

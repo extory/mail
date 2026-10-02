@@ -110,123 +110,51 @@ export function Sidebar() {
       .catch(() => {});
   }, []);
 
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [menuPath, setMenuPath] = useState(pathname);
+  const expanded = menuOpen && menuPath === pathname;
+  const current = navItems.find(item => item.href === pathname);
+  const sections = [
+    { label: "ux.overview", paths: ["/dashboard", "/statistics"] },
+    { label: "ux.mail", paths: ["/drafts", "/scheduled", "/history"] },
+    { label: "ux.audience", paths: ["/subscribers", "/groups"] },
+  ] as const;
+  const linkClass = (active: boolean) => `flex min-h-11 items-center gap-3 rounded-lg px-3 text-sm font-medium transition-colors ${active ? "bg-brand/10 text-brand" : "text-text-secondary hover:bg-surface hover:text-text-primary"}`;
+
   return (
-    <aside className="w-full md:w-[240px] shrink-0 md:min-h-screen bg-white border-b md:border-b-0 md:border-r border-border flex flex-col">
-      {/* Logo */}
-      <div className="px-5 py-3 md:py-6">
-        <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-brand-light to-accent flex items-center justify-center">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
-              <polyline points="22,6 12,13 2,6" />
-            </svg>
-          </div>
-          <span className="text-[15px] font-semibold text-text-primary tracking-tight">
-            {t("app.title")}
-          </span>
-        </div>
-      </div>
-
-      {/* Primary action: compose */}
-      <div className="px-3 mb-3">
-        <Link
-          href="/compose"
-          className="flex items-center justify-center gap-2 bg-gradient-to-r from-brand-light to-accent text-white h-10 rounded-lg text-[13px] font-semibold hover:opacity-95 shadow-sm shadow-brand/20 transition-all"
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M12 20h9" />
-            <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
-          </svg>
-          {t("compose.new")}
-        </Link>
-      </div>
-
-      {/* Nav */}
-      <nav className="md:flex-1 px-3 flex overflow-x-auto md:flex-col gap-0.5">
-        {navItems.map((item) => {
-          const isActive =
-            pathname === item.href ||
-            (item.href !== "/dashboard" && pathname.startsWith(item.href));
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={`flex shrink-0 items-center whitespace-nowrap gap-3 px-3 py-2 rounded-lg text-[13px] font-medium transition-all ${
-                isActive
-                  ? "bg-brand/[0.08] text-brand"
-                  : "text-text-secondary hover:text-text-primary hover:bg-surface"
-              }`}
-            >
-              <span className={isActive ? "text-brand" : "text-text-muted"}>{item.icon}</span>
-              {t(item.labelKey)}
-            </Link>
-          );
-        })}
-        {isAdmin && (
-          <Link
-            href="/invitations"
-            className={`flex shrink-0 items-center whitespace-nowrap gap-3 px-3 py-2 rounded-lg text-[13px] font-medium transition-all md:mt-4 ${
-              pathname === "/invitations"
-                ? "bg-brand/[0.08] text-brand"
-                : "text-text-secondary hover:text-text-primary hover:bg-surface"
-            }`}
-          >
-            <span className={pathname === "/invitations" ? "text-brand" : "text-text-muted"}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
-                <circle cx="9" cy="7" r="4" />
-                <line x1="19" y1="8" x2="19" y2="14" />
-                <line x1="22" y1="11" x2="16" y2="11" />
-              </svg>
-            </span>
-            {t("nav.invitations")}
-          </Link>
-        )}
-      </nav>
-
-      {/* Bottom controls */}
-      <div className="px-3 py-3 md:pt-0 md:pb-5 flex items-center gap-2 md:block md:space-y-2">
-        <Link
-          href="/settings"
-          className={`flex shrink-0 items-center whitespace-nowrap gap-3 px-3 py-2 rounded-lg text-[13px] font-medium transition-all ${
-            pathname === "/settings"
-              ? "bg-brand/[0.08] text-brand"
-              : "text-text-secondary hover:text-text-primary hover:bg-surface"
-          }`}
-        >
-          <span className={pathname === "/settings" ? "text-brand" : "text-text-muted"}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="12" cy="12" r="3" />
-              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
-            </svg>
-          </span>
-          {t("nav.settings")}
-        </Link>
-        <select
-          value={locale}
-          onChange={(e) => setLocale(e.target.value as Locale)}
-          className="w-auto min-w-0 md:w-full text-[12px] text-text-secondary bg-surface border border-border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand transition-all"
-        >
-          {locales.map((l) => (
-            <option key={l.code} value={l.code}>
-              {l.label}
-            </option>
-          ))}
-        </select>
-        <button
-          onClick={async () => {
-            await fetch("/api/auth/logout", { method: "POST" });
-            window.location.href = "/";
-          }}
-          className="w-auto min-w-0 md:w-full text-[12px] text-text-muted hover:text-danger px-3 py-2 rounded-lg hover:bg-surface transition-all text-left flex items-center gap-2"
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-            <polyline points="16 17 21 12 16 7" />
-            <line x1="21" y1="12" x2="9" y2="12" />
-          </svg>
-          Logout
+    <aside className="w-full md:w-[224px] shrink-0 bg-white border-b md:border-b-0 md:border-r border-border md:sticky md:top-0 md:h-dvh md:overflow-y-auto flex flex-col">
+      <a href="#main-content" className="sr-only focus:not-sr-only focus:p-3 focus:text-brand">{t("ux.skip")}</a>
+      <div className="flex items-center justify-between gap-3 p-4 md:px-5 md:py-6">
+        <Link href="/dashboard" className="font-semibold text-base tracking-tight text-brand">{t("app.title")}</Link>
+        <button type="button" aria-expanded={expanded} aria-controls="main-navigation" onClick={() => { setMenuPath(pathname); setMenuOpen(!expanded); }} className="md:hidden rounded-lg border border-border px-3 min-h-11 text-sm">
+          {expanded ? t("close") : t("ux.menu")}
         </button>
+      </div>
+      <div className="px-4 pb-3 md:hidden text-xs text-text-secondary">{current ? t(current.labelKey) : t("app.title")}</div>
+      <div id="main-navigation" className={`${expanded ? "flex" : "hidden"} md:flex flex-col flex-1 px-3 pb-4 gap-5`} onKeyDown={e => { if (e.key === "Escape") setMenuOpen(false); }}>
+        <Link href="/compose" onClick={() => setMenuOpen(false)} aria-current={pathname === "/compose" ? "page" : undefined} className="flex min-h-11 items-center justify-center gap-2 rounded-lg bg-brand text-white text-sm font-semibold hover:bg-brand-dark">+ {t("compose.new")}</Link>
+        <nav aria-label={t("ux.menu")} className="space-y-5 flex-1">
+          {sections.map(section => (
+            <div key={section.label}>
+              <p className="px-3 mb-1 text-xs font-medium text-text-secondary">{t(section.label)}</p>
+              {section.paths.map(path => {
+                const item = navItems.find(item => item.href === path)!;
+                const active = pathname === path;
+                return <Link key={path} href={path} onClick={() => setMenuOpen(false)} aria-current={active ? "page" : undefined} className={linkClass(active)}>{item.icon}{t(item.labelKey)}</Link>;
+              })}
+            </div>
+          ))}
+        </nav>
+        <div className="border-t border-border pt-3 space-y-2">
+          {isAdmin && <Link href="/invitations" onClick={() => setMenuOpen(false)} className={linkClass(pathname === "/invitations")}>{t("nav.invitations")}</Link>}
+          <Link href="/settings" onClick={() => setMenuOpen(false)} className={linkClass(pathname === "/settings")}>{t("nav.settings")}</Link>
+          <label className="block px-3 text-xs text-text-secondary">{t("ux.language")}
+            <select value={locale} onChange={e => setLocale(e.target.value as Locale)} className="mt-1 w-full min-h-11 border border-border rounded-lg px-2 bg-white text-sm">
+              {locales.map(l => <option key={l.code} value={l.code}>{l.label}</option>)}
+            </select>
+          </label>
+          <button onClick={async () => { await fetch("/api/auth/logout", { method: "POST" }); window.location.href = "/"; }} className="w-full min-h-11 px-3 text-left text-sm text-text-secondary hover:text-danger">{t("ux.logout")}</button>
+        </div>
       </div>
     </aside>
   );

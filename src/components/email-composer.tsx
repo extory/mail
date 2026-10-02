@@ -1305,9 +1305,14 @@ export function EmailComposer() {
   const hasOutput = Boolean(subject || htmlContent);
 
   return (
-    <div className={`grid gap-5 ${hasOutput ? "lg:grid-cols-[minmax(360px,520px)_1fr]" : "lg:grid-cols-1"}`}>
+    <div className={`grid gap-5 ${hasOutput ? "xl:grid-cols-[minmax(320px,440px)_minmax(0,1fr)]" : "lg:grid-cols-1"}`}>
+      <nav aria-label={t("ux.compose_steps")} className="col-span-full flex flex-wrap gap-2 text-sm">
+        <a href="#compose-write" className="rounded-lg border border-border bg-white px-3 py-2 text-brand">1. {t("ux.write")}</a>
+        {htmlContent ? <a href="#compose-preview" className="rounded-lg border border-border bg-white px-3 py-2 text-brand">2. {t("compose.preview")}</a> : <span className="px-3 py-2 text-text-secondary">2. {t("compose.preview")}</span>}
+        {htmlContent && !generating ? <a href="#compose-send" className="rounded-lg border border-border bg-white px-3 py-2 text-brand">3. {t("ux.send")}</a> : <span className="px-3 py-2 text-text-secondary">3. {t("ux.send")}</span>}
+      </nav>
       {/* LEFT: Prompt + options */}
-      <div className="space-y-5">
+      <div id="compose-write" tabIndex={-1} className="scroll-mt-4 min-w-0 space-y-5">
       <div className="bg-surface-card border border-border rounded-xl p-5 space-y-3">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <label className="min-w-0 text-[12px] font-medium text-text-secondary">
@@ -1509,7 +1514,7 @@ export function EmailComposer() {
 
       {/* RIGHT: Subject + Preview + Send + Revisions */}
       {hasOutput && (
-      <div className="space-y-5">
+      <div className="min-w-0 space-y-5">
 
       {/* Subject line */}
       {(subject || htmlContent) && (
@@ -1578,8 +1583,8 @@ export function EmailComposer() {
 
       {/* Preview */}
       {htmlContent && (
-        <div className="bg-surface-card border border-border rounded-xl overflow-hidden">
-          <div className="flex items-center justify-between px-5 py-3 border-b border-border-light bg-surface gap-3">
+        <div id="compose-preview" tabIndex={-1} className="scroll-mt-4 bg-surface-card border border-border rounded-xl overflow-hidden">
+          <div className="flex flex-wrap items-center justify-between px-5 py-3 border-b border-border-light bg-surface gap-3">
             <div className="flex items-center gap-2 min-w-0">
               <h3 className="text-[12px] font-medium text-text-secondary flex-shrink-0">{t("compose.preview")}</h3>
               {hasManualChanges && (
@@ -1589,7 +1594,7 @@ export function EmailComposer() {
                 </span>
               )}
             </div>
-            <div className="flex items-center gap-3 flex-shrink-0">
+            <div className="flex flex-wrap items-center gap-3">
               <button
                 onClick={saveRevisionManually}
                 disabled={!hasManualChanges || savingRevision}
@@ -1745,8 +1750,11 @@ export function EmailComposer() {
 
       {/* Send controls */}
       {htmlContent && !generating && (
-        <div className="bg-surface-card border border-border rounded-xl p-5 space-y-3">
-          <label className="flex items-start gap-2 cursor-pointer select-none">
+        <div id="compose-send" tabIndex={-1} className="scroll-mt-4 bg-surface-card border border-border rounded-xl p-5 space-y-3">
+          <h3 className="text-sm font-semibold">{t("ux.send")}</h3>
+          <details className="rounded-lg border border-border p-3">
+          <summary className="cursor-pointer text-sm text-text-secondary">{t("ux.image_options")}{sendAsImage ? ` · ${t("compose.send_as_image")}` : ""}{embedMode === "cid" ? ` · ${t("compose.embed_cid")}` : ""}</summary>
+          <label className="mt-3 flex items-start gap-2 cursor-pointer select-none">
             <input
               type="checkbox"
               checked={sendAsImage}
@@ -1814,6 +1822,8 @@ export function EmailComposer() {
               </label>
             </div>
           </div>
+
+          </details>
 
           {/* Schedule */}
           <div className="pt-3 border-t border-border-light">
