@@ -479,10 +479,21 @@ export function saveDraft(subject: string, htmlContent: string, prompt: string, 
 }
 
 export function deleteDraft(id: number): void {
+  deleteDrafts([id]);
+}
+
+export function deleteDrafts(ids: number[]): number {
   const db = getDb();
-  // Explicit revision cleanup in case foreign-key cascade is not active
-  db.prepare("DELETE FROM draft_revisions WHERE draft_id = ?").run(id);
-  db.prepare("DELETE FROM drafts WHERE id = ?").run(id);
+  const deleteRevisions = db.prepare("DELETE FROM draft_revisions WHERE draft_id = ?");
+  const deleteOne = db.prepare("DELETE FROM drafts WHERE id = ?");
+  return db.transaction(() => {
+    let deleted = 0;
+    for (const id of new Set(ids)) {
+      deleteRevisions.run(id);
+      deleted += deleteOne.run(id).changes;
+    }
+    return deleted;
+  })();
 }
 
 // --- Draft Revisions ---
