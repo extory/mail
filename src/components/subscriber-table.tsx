@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { filterSubscribers, selectedVisibleIds } from "@/lib/subscriber-selection";
 import type { Subscriber, Group } from "@/lib/types";
 import { useLocale } from "./locale-provider";
 import { Pagination, paginate, type PageSize } from "./pagination";
@@ -22,7 +23,7 @@ interface ImportResultDetail {
 
 export function SubscriberTable() {
   const { t } = useLocale();
-  const [subscribers, setSubscribers] = useState<Subscriber[]>([]);
+  const [allSubscribers, setSubscribers] = useState<Subscriber[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
   const [search, setSearch] = useState("");
   const [filterGroupId, setFilterGroupId] = useState<string>("");
@@ -41,23 +42,38 @@ export function SubscriberTable() {
   const fileRef = useRef<HTMLInputElement>(null);
   const groupPickerRef = useRef<HTMLDivElement>(null);
 
+  const subscribers = filterSubscribers(allSubscribers, search, filterGroupId);
+  const visibleSelected = selectedVisibleIds(subscribers, selectedIds);
+  const [listError, setListError] = useState<"load" | "delete" | null>(null);
+  const bulkDeletingRef = useRef(false);
+  const listRequest = useRef(0);
+
   const fetchGroups = async () => {
     const res = await fetch("/api/groups");
     setGroups(await res.json());
   };
 
-  const fetchSubscribers = async () => {
-    const params = new URLSearchParams();
-    if (search) params.set("search", search);
-    if (filterGroupId) params.set("groupId", filterGroupId);
-    const qs = params.toString();
-    const res = await fetch(`/api/subscribers${qs ? `?${qs}` : ""}`);
-    setSubscribers(await res.json());
-    setLoading(false);
-  };
+  const fetchSubscribers = useCallback(async () => {
+    const requestId = ++listRequest.current;
+    setLoading(true);
+    setListError(null);
+    try {
+      const res = await fetch("/api/subscribers");
+      if (!res.ok) throw new Error("Failed to load subscribers");
+      const data: Subscriber[] = await res.json();
+      if (requestId !== listRequest.current) return;
+      setSubscribers(data);
+      setSelectedIds(prev => new Set(selectedVisibleIds(data, prev)));
+      setPage(1);
+    } catch {
+      if (requestId === listRequest.current) setListError("load");
+    } finally {
+      if (requestId === listRequest.current) setLoading(false);
+    }
+  }, []);
 
   useEffect(() => { fetchGroups(); }, []);
-  useEffect(() => { fetchSubscribers(); setPage(1); }, [search, filterGroupId]);
+  useEffect(() => { void fetchSubscribers(); }, [fetchSubscribers]);
 
   // Close popover when clicking outside
   useEffect(() => {
@@ -238,19 +254,24 @@ export function SubscriberTable() {
   };
 
   const handleBulkDelete = async () => {
-    if (selectedIds.size === 0) return;
-    if (!confirm(t("subscribers.bulk_delete_confirm", { count: selectedIds.size }))) return;
+    if (loading || listError === "load" || bulkDeletingRef.current || visibleSelected.length === 0) return;
+    if (!confirm(t("subscribers.bulk_delete_confirm", { count: visibleSelected.length }))) return;
+    bulkDeletingRef.current = true;
     setBulkDeleting(true);
+    setListError(null);
     try {
-      await fetch("/api/subscribers/bulk-delete", {
+      const res = await fetch("/api/subscribers/bulk-delete", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ids: Array.from(selectedIds) }),
+        body: JSON.stringify({ ids: visibleSelected }),
       });
+      if (!res.ok) throw new Error("Failed to delete subscribers");
       setSelectedIds(new Set());
-      fetchSubscribers();
+      await fetchSubscribers();
       fetchGroups();
-    } finally {
+    } catch { setListError("delete"); }
+    finally {
+      bulkDeletingRef.current = false;
       setBulkDeleting(false);
     }
   };
@@ -482,7 +503,7 @@ plain@example.com,,
       )}
 
       {/* Search + Filter */}
-      <div className="flex gap-3">
+      <div className="flex flex-wrap gap-3">
         <div className="relative flex-1 max-w-xs">
           <svg className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" />
@@ -490,14 +511,17 @@ plain@example.com,,
           <input
             type="text"
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => { setSearch(e.target.value); setSelectedIds(new Set()); setPage(1); setOpenGroupPickerForId(null); }}
+            aria-label={t("subscribers.search")}
+            disabled={bulkDeleting || loading}
             placeholder={t("subscribers.search")}
             className={`${inputClass} w-full pl-9`}
           />
         </div>
         <select
           value={filterGroupId}
-          onChange={(e) => setFilterGroupId(e.target.value)}
+          onChange={(e) => { setFilterGroupId(e.target.value); setSelectedIds(new Set()); setPage(1); setOpenGroupPickerForId(null); }}
+          disabled={bulkDeleting || loading}
           className={selectClass}
         >
           <option value="">{t("subscribers.all_groups")}</option>
@@ -508,22 +532,25 @@ plain@example.com,,
         </select>
       </div>
 
+      <p role="status" className="text-[12px] text-text-secondary">{t("subscribers.search_count", { count: subscribers.length })} · {t("subscribers.search_selection_hint")}</p>
+      {listError && <p role="alert" className="text-danger text-[13px]">{t(listError === "load" ? "subscribers.load_error" : "subscribers.delete_error")}</p>}
       {/* Bulk actions bar */}
-      {selectedIds.size > 0 && (
+      {visibleSelected.length > 0 && (
         <div className="flex items-center justify-between bg-brand/[0.06] border border-brand/20 rounded-xl px-4 py-2.5">
           <span className="text-[13px] font-medium text-text-primary">
-            {t("subscribers.selected_count", { count: selectedIds.size })}
+            {t("subscribers.selected_count", { count: visibleSelected.length })}
           </span>
           <div className="flex items-center gap-3">
             <button
               onClick={() => setSelectedIds(new Set())}
+              disabled={bulkDeleting}
               className="text-[12px] text-text-secondary hover:text-text-primary font-medium transition-colors"
             >
               {t("subscribers.clear_selection")}
             </button>
             <button
               onClick={handleBulkDelete}
-              disabled={bulkDeleting}
+              disabled={bulkDeleting || loading || listError === "load"}
               className="bg-danger text-white px-4 py-1.5 rounded-lg text-[12px] font-medium hover:bg-danger/90 disabled:opacity-40 transition-colors"
             >
               {bulkDeleting ? "..." : t("subscribers.bulk_delete")}
@@ -540,11 +567,13 @@ plain@example.com,,
               <th className="px-5 py-3 w-10">
                 <input
                   type="checkbox"
-                  checked={subscribers.length > 0 && selectedIds.size === subscribers.length}
+                  checked={subscribers.length > 0 && visibleSelected.length === subscribers.length}
                   ref={(el) => {
-                    if (el) el.indeterminate = selectedIds.size > 0 && selectedIds.size < subscribers.length;
+                    if (el) el.indeterminate = visibleSelected.length > 0 && visibleSelected.length < subscribers.length;
                   }}
                   onChange={(e) => handleSelectAll(e.target.checked)}
+                  aria-label={t("subscribers.select_results")}
+                  disabled={loading || bulkDeleting || listError === "load"}
                   className="w-4 h-4 rounded border-border text-brand focus:ring-brand/20"
                 />
               </th>
@@ -572,6 +601,8 @@ plain@example.com,,
                       type="checkbox"
                       checked={selectedIds.has(sub.id)}
                       onChange={(e) => handleSelectOne(sub.id, e.target.checked)}
+                      aria-label={t("groups.select_member", { email: sub.email })}
+                      disabled={loading || bulkDeleting || listError === "load"}
                       className="w-4 h-4 rounded border-border text-brand focus:ring-brand/20"
                     />
                   </td>

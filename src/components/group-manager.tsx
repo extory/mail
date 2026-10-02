@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import { filterSubscribers, selectedVisibleIds } from "@/lib/subscriber-selection";
 import type { Group, Subscriber } from "@/lib/types";
 import { useLocale } from "./locale-provider";
 
@@ -40,6 +41,7 @@ export function GroupManager() {
       const updated: Subscriber = await res.json();
       setMembers(prev => prev.map(member => member.id === updated.id ? updated : member));
       setEditingId(null);
+      setSelectedIds(new Set());
     } catch { setEditError("save"); }
     finally { savingMemberRef.current = false; setSavingMember(false); }
   };
@@ -50,11 +52,14 @@ export function GroupManager() {
   const memberRequest = useRef(0);
   const removingRef = useRef(false);
   const selectAllRef = useRef<HTMLInputElement>(null);
-  const allSelected = members.length > 0 && selectedIds.size === members.length;
+  const [memberSearch, setMemberSearch] = useState("");
+  const filteredMembers = filterSubscribers(members, memberSearch);
+  const visibleSelected = selectedVisibleIds(filteredMembers, selectedIds);
+  const allSelected = filteredMembers.length > 0 && visibleSelected.length === filteredMembers.length;
 
   useEffect(() => {
-    if (selectAllRef.current) selectAllRef.current.indeterminate = selectedIds.size > 0 && !allSelected;
-  }, [selectedIds, allSelected, membersLoading]);
+    if (selectAllRef.current) selectAllRef.current.indeterminate = visibleSelected.length > 0 && !allSelected;
+  }, [selectedIds, allSelected, membersLoading, visibleSelected.length]);
 
   const fetchGroups = async () => {
     const res = await fetch("/api/groups");
@@ -68,6 +73,7 @@ export function GroupManager() {
     if (adding || removingRef.current || savingMemberRef.current) return;
     setEditingId(null);
     setEditError(null);
+    setMemberSearch("");
     const requestId = ++memberRequest.current;
     setSelectedIds(new Set());
     setMemberError(null);
@@ -97,7 +103,8 @@ export function GroupManager() {
 
   const handleRemoveMembers = async (groupId: number) => {
     if (removingRef.current || adding || editingId !== null || selectedIds.size === 0) return;
-    const ids = [...selectedIds];
+    const ids = visibleSelected;
+    if (ids.length === 0) return;
     if (!confirm(t("groups.remove_confirm", { count: ids.length }))) return;
     removingRef.current = true;
     setRemoving(true);
@@ -332,6 +339,14 @@ export function GroupManager() {
                       )}
                     </div>
 
+                    <div className="px-5 pt-4 space-y-2">
+                      <input type="search" value={memberSearch} aria-label={t("subscribers.search")} placeholder={t("subscribers.search")}
+                        disabled={adding || removing || savingMember}
+                        onChange={e => { setMemberSearch(e.target.value); setSelectedIds(new Set()); }}
+                        className="w-full max-w-sm rounded-lg border border-border bg-white px-3 py-2 text-[13px]" />
+                      <p role="status" className="text-[12px] text-text-secondary">{t("subscribers.search_count", { count: filteredMembers.length })} · {t("subscribers.search_selection_hint")}</p>
+                    </div>
+
                     {editingId !== null && (
                       <form onSubmit={handleSaveMember} className="m-5 rounded-lg border border-brand/20 bg-surface/50 p-4 space-y-3">
                         <h4 className="text-[13px] font-medium">{t("groups.edit_member")}</h4>
@@ -362,8 +377,8 @@ export function GroupManager() {
                     ) : (
                       <>
                       <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3">
-                        <span role="status" className="text-[13px] text-text-secondary">{t("groups.selected_count", { count: selectedIds.size })}</span>
-                        <button type="button" onClick={() => handleRemoveMembers(group.id)} disabled={adding || removing || editingId !== null || selectedIds.size === 0}
+                        <span role="status" className="text-[13px] text-text-secondary">{t("groups.selected_count", { count: visibleSelected.length })}</span>
+                        <button type="button" onClick={() => handleRemoveMembers(group.id)} disabled={adding || removing || editingId !== null || visibleSelected.length === 0}
                           className="rounded-lg border border-danger/30 px-3 py-2 text-[12px] text-danger disabled:opacity-40 disabled:cursor-not-allowed">
                           {removing ? t("loading") : t("groups.remove_selected")}
                         </button>
@@ -373,8 +388,8 @@ export function GroupManager() {
                         <thead>
                           <tr className="bg-surface">
                             <th className="w-12 px-4 py-2.5">
-                              <input ref={selectAllRef} type="checkbox" aria-label={t("groups.select_all")} checked={allSelected} disabled={adding || removing || editingId !== null}
-                                onChange={e => setSelectedIds(e.target.checked ? new Set(members.map(member => member.id)) : new Set())}
+                              <input ref={selectAllRef} type="checkbox" aria-label={t("subscribers.select_results")} checked={allSelected} disabled={adding || removing || editingId !== null}
+                                onChange={e => setSelectedIds(e.target.checked ? new Set(filteredMembers.map(member => member.id)) : new Set())}
                                 className="h-4 w-4 accent-brand" />
                             </th>
                             <th className="text-left px-5 py-2.5 font-medium text-text-secondary text-[12px]">{t("subscribers.email")}</th>
@@ -384,7 +399,7 @@ export function GroupManager() {
                           </tr>
                         </thead>
                         <tbody>
-                          {members.map((sub) => (
+                          {filteredMembers.map((sub) => (
                             <tr key={sub.id} className="border-t border-border-light">
                               <td className="px-4 py-2.5">
                                 <input type="checkbox" aria-label={t("groups.select_member", { email: sub.email })} checked={selectedIds.has(sub.id)} disabled={adding || removing || editingId !== null}
