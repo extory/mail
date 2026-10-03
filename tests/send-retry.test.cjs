@@ -137,3 +137,31 @@ test('CID images use single-email API with attachments and retry keeps stored se
   assert.equal(requests[0].payload.attachments.length,1);
   assert.match(requests[0].payload.html,/src="cid:img1"/);
 });
+
+test('unsubscribe suppresses frozen retries and supplies per-recipient HTTP unsubscribe headers', async () => {
+  const recipients = seed(2, 'optout');
+  const log = newLog(recipients);
+  requests = [];
+  reply = () => new Response(JSON.stringify({ name: 'rate_limit_exceeded', message: 'Retry later' }), { status: 429 });
+  await mail.sendBulkEmails(log.subject, log.html_content, recipients, log.id);
+  const first = requests[0].payload[0];
+  assert.match(first.headers['List-Unsubscribe'], /\/api\/unsubscribe\?token=/);
+  assert.equal(first.headers['List-Unsubscribe-Post'], 'List-Unsubscribe=One-Click');
+  assert.match(first.html, /\/unsubscribe\?token=/);
+  db.unsubscribeByEmail(recipients[0].email);
+  requests = []; reply = ok;
+  await mail.retryUnsentEmails(log.id);
+  assert.deepEqual(requests.flatMap(r => r.payload.map(email => email.to[0])), [recipients[1].email]);
+});
+
+test('scheduled delivery excludes recipients who unsubscribe after scheduling', async () => {
+  const group = db.addGroup('scheduled suppression');
+  const blocked = db.addSubscriber('scheduled-blocked@real-company.co', '', [group.id]);
+  const allowed = db.addSubscriber('scheduled-allowed@real-company.co', '', [group.id]);
+  db.createScheduledSend('Scheduled optout', '<p>Scheduled</p>', null, group.id, false, '2020-01-01T00:00:00.000Z', null);
+  db.unsubscribeByEmail(blocked.email);
+  requests = []; reply = ok;
+  const { tickScheduler } = require('../src/lib/scheduler.ts');
+  await tickScheduler();
+  assert.deepEqual(requests.flatMap(r => r.payload.map(email => email.to[0])), [allowed.email]);
+});

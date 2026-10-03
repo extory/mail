@@ -22,7 +22,7 @@ export function GroupManager() {
   const [editEmail, setEditEmail] = useState("");
   const [editName, setEditName] = useState("");
   const [savingMember, setSavingMember] = useState(false);
-  const [editError, setEditError] = useState<"duplicate" | "save" | null>(null);
+  const [editError, setEditError] = useState<"duplicate" | "unsubscribed" | "save" | null>(null);
   const savingMemberRef = useRef(false);
 
   const handleSaveMember = async (event: React.FormEvent) => {
@@ -36,7 +36,7 @@ export function GroupManager() {
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: editEmail.trim(), name: editName.trim() }),
       });
-      if (res.status === 409) { setEditError("duplicate"); return; }
+      if (res.status === 409) { const data = await res.json(); setEditError(data.error === "email_unsubscribed" ? "unsubscribed" : "duplicate"); return; }
       if (!res.ok) throw new Error("Failed to save subscriber");
       const updated: Subscriber = await res.json();
       setMembers(prev => prev.map(member => member.id === updated.id ? updated : member));
@@ -362,7 +362,7 @@ export function GroupManager() {
                               className="mt-1 w-full rounded-lg border border-border bg-white px-3 py-2 text-[13px]" />
                           </label>
                         </div>
-                        {editError && <p role="alert" className="text-[12px] text-danger">{t(editError === "duplicate" ? "groups.duplicate_email" : "groups.edit_error")}</p>}
+                        {editError && <p role="alert" className="text-[12px] text-danger">{t(editError === "unsubscribed" ? "unsubscribe.blocked" : editError === "duplicate" ? "groups.duplicate_email" : "groups.edit_error")}</p>}
                         <div className="flex gap-3">
                           <button type="submit" disabled={savingMember || !editEmail.trim()} className="rounded-lg bg-brand text-white px-4 py-2 text-[12px] disabled:opacity-40">{savingMember ? t("loading") : t("save")}</button>
                           <button type="button" disabled={savingMember} onClick={() => { setEditingId(null); setEditError(null); }} className="px-3 py-2 text-[12px]">{t("cancel")}</button>

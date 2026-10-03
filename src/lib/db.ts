@@ -41,6 +41,12 @@ export function getDb(): Database.Database {
         status TEXT DEFAULT 'active',
         FOREIGN KEY (group_id) REFERENCES groups(id) ON DELETE SET NULL
       );
+      CREATE TABLE IF NOT EXISTS email_suppressions (
+        email TEXT PRIMARY KEY COLLATE NOCASE,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      INSERT OR IGNORE INTO email_suppressions(email)
+        SELECT lower(trim(email)) FROM subscribers WHERE status = 'unsubscribed';
       CREATE TABLE IF NOT EXISTS saved_images (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         url TEXT NOT NULL UNIQUE,
@@ -240,6 +246,7 @@ export function getSubscribers(search?: string, groupId?: number): Subscriber[] 
     SELECT s.id, s.email, s.name, s.created_at, s.status
     FROM subscribers s
     WHERE s.status = 'active'
+      AND NOT EXISTS (SELECT 1 FROM email_suppressions es WHERE es.email = s.email COLLATE NOCASE)
   `;
   const params: (string | number)[] = [];
 
@@ -302,11 +309,18 @@ function getSubscriberById(id: number): Subscriber | undefined {
 
 export function addSubscriber(email: string, name?: string, groupIds?: number[]): Subscriber {
   const db = getDb();
-  db.prepare(
-    "INSERT INTO subscribers (email, name) VALUES (?, ?) ON CONFLICT(email) DO UPDATE SET status = 'active', name = COALESCE(?, name)"
-  ).run(email, name || null, name || null);
+  email = email.trim().toLowerCase();
+  if (isEmailSuppressed(email)) throw new Error("email_unsubscribed");
+  const existing = db.prepare("SELECT id FROM subscribers WHERE email = ? COLLATE NOCASE").get(email) as { id: number } | undefined;
+  let sub: { id: number };
+  if (existing) {
+    db.prepare("UPDATE subscribers SET name = COALESCE(?, name) WHERE id = ?").run(name || null, existing.id);
+    sub = existing;
+  } else {
+    const result = db.prepare("INSERT INTO subscribers (email, name) VALUES (?, ?)").run(email, name || null);
+    sub = { id: Number(result.lastInsertRowid) };
+  }
 
-  const sub = db.prepare("SELECT id FROM subscribers WHERE email = ?").get(email) as { id: number };
   if (groupIds && groupIds.length > 0) {
     addToGroups(sub.id, groupIds);
   }
@@ -314,10 +328,12 @@ export function addSubscriber(email: string, name?: string, groupIds?: number[])
   return getSubscriberById(sub.id)!;
 }
 
-export function updateSubscriberDetails(id: number, email: string, name: string): Subscriber | "duplicate" | undefined {
+export function updateSubscriberDetails(id: number, email: string, name: string): Subscriber | "duplicate" | "unsubscribed" | undefined {
   const db = getDb();
   return db.transaction(() => {
-    if (!getSubscriberById(id)) return undefined;
+    const current = getSubscriberById(id);
+    if (!current) return undefined;
+    if (current.email.toLowerCase() !== email.toLowerCase() && isEmailSuppressed(email)) return "unsubscribed";
     const duplicate = db.prepare("SELECT id FROM subscribers WHERE email = ? COLLATE NOCASE AND id != ?").get(email, id);
     if (duplicate) return "duplicate";
     db.prepare("UPDATE subscribers SET email = ?, name = ? WHERE id = ?").run(email, name || null, id);
@@ -329,15 +345,29 @@ export function updateSubscriberGroups(id: number, groupIds: number[]): void {
   setSubscriberGroups(id, groupIds);
 }
 
-export function removeSubscriber(id: number): void {
+export function isEmailSuppressed(email: string): boolean {
   const db = getDb();
-  db.prepare("UPDATE subscribers SET status = 'unsubscribed' WHERE id = ?").run(id);
+  return Boolean(db.prepare("SELECT 1 FROM email_suppressions WHERE email = ? COLLATE NOCASE").get(email.trim()) ||
+    db.prepare("SELECT 1 FROM subscribers WHERE email = ? COLLATE NOCASE AND status = 'unsubscribed'").get(email.trim()));
+}
+
+export function getUnsubscribedEmails(): { email: string; created_at: string }[] {
+  return getDb().prepare("SELECT email, created_at FROM email_suppressions ORDER BY created_at DESC, email").all() as { email: string; created_at: string }[];
+}
+
+export function removeSubscriber(id: number): void {
+  const subscriber = getSubscriberById(id);
+  if (subscriber) unsubscribeByEmail(subscriber.email);
 }
 
 export function unsubscribeByEmail(email: string): boolean {
   const db = getDb();
-  const result = db.prepare("UPDATE subscribers SET status = 'unsubscribed' WHERE email = ? AND status = 'active'").run(email);
-  return result.changes > 0;
+  const normalized = email.trim().toLowerCase();
+  db.transaction(() => {
+    db.prepare("INSERT OR IGNORE INTO email_suppressions(email) VALUES (?)").run(normalized);
+    db.prepare("UPDATE subscribers SET status = 'unsubscribed' WHERE email = ? COLLATE NOCASE").run(normalized);
+  })();
+  return true;
 }
 
 function getOrCreateGroupByName(name: string): number {
@@ -368,7 +398,7 @@ export function importSubscribers(
   defaultGroupIds?: number[]
 ): ImportResult {
   const db = getDb();
-  const findByEmail = db.prepare("SELECT id, name, status FROM subscribers WHERE email = ?");
+  const findByEmail = db.prepare("SELECT id, name, status FROM subscribers WHERE email = ? COLLATE NOCASE");
   const insertSub = db.prepare("INSERT INTO subscribers (email, name) VALUES (?, ?)");
   const updateStatusAndName = db.prepare(
     "UPDATE subscribers SET status = 'active', name = COALESCE(?, name) WHERE id = ?"
@@ -425,19 +455,19 @@ export function importSubscribers(
       }
       seenEmails.add(email);
 
+      if (isEmailSuppressed(email)) {
+        skipped++;
+        skipped_rows.push({ ...row, reason: "previously_unsubscribed" });
+        continue;
+      }
       const existing = findByEmail.get(email) as { id: number; name: string | null; status: string } | undefined;
       let subscriberId: number;
 
       if (existing) {
-        // Already in DB — re-activate and update name; record what happened
+        // Only active, non-suppressed addresses reach this update.
         updateStatusAndName.run(row.name || null, existing.id);
         subscriberId = existing.id;
-        if (existing.status === "unsubscribed") {
-          skipped++;
-          skipped_rows.push({ ...row, reason: "previously_unsubscribed" });
-        } else {
-          updated++;
-        }
+        updated++;
       } else {
         // New subscriber
         try {
@@ -940,7 +970,7 @@ export function getDashboardData() {
   const db = getDb();
 
   const subscriberCount = (db.prepare("SELECT COUNT(*) as c FROM subscribers WHERE status = 'active'").get() as { c: number }).c;
-  const unsubscribedCount = (db.prepare("SELECT COUNT(*) as c FROM subscribers WHERE status = 'unsubscribed'").get() as { c: number }).c;
+  const unsubscribedCount = (db.prepare("SELECT COUNT(*) as c FROM email_suppressions").get() as { c: number }).c;
   const groupCount = (db.prepare("SELECT COUNT(*) as c FROM groups").get() as { c: number }).c;
   const draftCount = (db.prepare("SELECT COUNT(*) as c FROM drafts").get() as { c: number }).c;
   const campaignCount = (db.prepare("SELECT COUNT(*) as c FROM send_log").get() as { c: number }).c;

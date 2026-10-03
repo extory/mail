@@ -1,8 +1,9 @@
 import { NextRequest } from "next/server";
-import { getSubscribers, addSubscriber, updateSubscriberGroups } from "@/lib/db";
+import { getSubscribers, addSubscriber, updateSubscriberGroups, isEmailSuppressed, getUnsubscribedEmails } from "@/lib/db";
 import { isValidEmail, sanitizeString } from "@/lib/validation";
 
 export async function GET(request: NextRequest) {
+  if (request.nextUrl.searchParams.get("status") === "unsubscribed") return Response.json(getUnsubscribedEmails());
   const search = request.nextUrl.searchParams.get("search") || undefined;
   const groupParam = request.nextUrl.searchParams.get("groupId");
   const groupId = groupParam !== null ? Number(groupParam) : undefined;
@@ -25,6 +26,7 @@ export async function POST(request: NextRequest) {
   if (!email || !isValidEmail(email)) {
     return Response.json({ error: "Valid email is required" }, { status: 400 });
   }
+  if (isEmailSuppressed(email)) return Response.json({ error: "email_unsubscribed" }, { status: 409 });
   const safeName = name ? sanitizeString(name, 200) : undefined;
   const ids = parseGroupIds(groupIds ?? groupId);
   const subscriber = addSubscriber(email, safeName, ids);

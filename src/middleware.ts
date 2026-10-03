@@ -21,8 +21,15 @@ const protectedPaths = [
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
+  // Older emails pointed one-click POSTs at the confirmation page.
+  if (pathname === "/unsubscribe" && request.method === "POST") {
+    const target = request.nextUrl.clone();
+    target.pathname = "/api/unsubscribe";
+    return NextResponse.rewrite(target);
+  }
+
   // CSRF: Block cross-origin state-changing requests to API
-  if (pathname.startsWith("/api/") && request.method !== "GET") {
+  if (pathname.startsWith("/api/") && pathname !== "/api/unsubscribe" && request.method !== "GET") {
     const origin = request.headers.get("origin");
     const host = request.headers.get("host");
     if (origin && host && !origin.includes(host)) {
@@ -36,7 +43,7 @@ export async function middleware(request: NextRequest) {
 
   const isProtectedApi = pathname.startsWith("/api/") &&
     !pathname.startsWith("/api/auth/") &&
-    !pathname.startsWith("/api/unsubscribe") &&
+    pathname !== "/api/unsubscribe" &&
     !pathname.startsWith("/api/webhooks/");
 
   if (!isProtected && !isProtectedApi) {
@@ -64,6 +71,7 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
+    "/unsubscribe",
     "/dashboard/:path*",
     "/subscribers/:path*",
     "/groups/:path*",

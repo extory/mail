@@ -1,5 +1,18 @@
 const translations = {
   en: {
+    "unsubscribe.manual_email": "Email to unsubscribe",
+    "unsubscribe.manual_add": "Add to unsubscribe list",
+    "unsubscribe.manual_hint": "You can block an address even if it is not a subscriber. Existing subscribers are excluded from future sends immediately.",
+    "unsubscribe.manual_success": "{email} is on the unsubscribe list.",
+    "unsubscribe.manual_error": "Could not register this address. Please try again.",
+    "unsubscribe.invalid_email": "Enter a valid email address.",
+
+    "unsubscribe.list": "Unsubscribed addresses",
+    "unsubscribe.list_hint": "These addresses are excluded from all groups, scheduled emails and retries. Importing or adding them again will not resume delivery.",
+    "unsubscribe.refresh": "Refresh list",
+    "unsubscribe.blocked": "This email has unsubscribed and cannot be added again.",
+    "unsubscribe.add_error": "Unable to add subscriber. Please try again.",
+
     "ux.compose_steps": "Email workflow",
     "ux.write": "Write",
     "ux.send": "Send settings",
@@ -388,6 +401,19 @@ const translations = {
     "history.restore_confirm": "Copy this email into a new draft and open it in the composer?",
   },
   ko: {
+    "unsubscribe.manual_email": "수신거부할 이메일",
+    "unsubscribe.manual_add": "수신거부 목록에 추가",
+    "unsubscribe.manual_hint": "구독자로 등록되지 않은 주소도 추가할 수 있습니다. 기존 구독자는 즉시 이후 발송 대상에서 제외됩니다.",
+    "unsubscribe.manual_success": "{email} 주소를 수신거부 목록에 등록했습니다.",
+    "unsubscribe.manual_error": "수신거부 등록에 실패했습니다. 다시 시도해 주세요.",
+    "unsubscribe.invalid_email": "올바른 이메일 주소를 입력해 주세요.",
+
+    "unsubscribe.list": "수신거부 목록",
+    "unsubscribe.list_hint": "수신거부 주소는 모든 그룹·예약·재발송에서 제외됩니다. 파일 업로드나 재등록으로 수신이 재개되지 않습니다.",
+    "unsubscribe.refresh": "목록 새로고침",
+    "unsubscribe.blocked": "수신거부한 이메일이므로 다시 등록할 수 없습니다.",
+    "unsubscribe.add_error": "구독자를 등록하지 못했습니다. 다시 시도해 주세요.",
+
     "ux.compose_steps": "메일 작성 단계",
     "ux.write": "내용 작성",
     "ux.send": "발송 설정",

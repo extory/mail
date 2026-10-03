@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, Suspense } from "react";
+import { useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 
@@ -10,10 +10,6 @@ function UnsubscribeForm() {
   const [status, setStatus] = useState<"loading" | "confirm" | "done" | "error">("confirm");
   const [email, setEmail] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
-
-  useEffect(() => {
-    if (!token) setStatus("error");
-  }, [token]);
 
   const handleUnsubscribe = async () => {
     setStatus("loading");
@@ -28,11 +24,11 @@ function UnsubscribeForm() {
         setEmail(data.email);
         setStatus("done");
       } else {
-        setErrorMsg(data.error || "Something went wrong");
+        setErrorMsg(data.error || "처리하지 못했습니다. 다시 시도해 주세요. / Please try again.");
         setStatus("error");
       }
     } catch {
-      setErrorMsg("Something went wrong");
+      setErrorMsg("처리하지 못했습니다. 다시 시도해 주세요. / Please try again.");
       setStatus("error");
     }
   };
@@ -50,23 +46,23 @@ function UnsubscribeForm() {
         </div>
 
         <div className="bg-white rounded-xl border border-[#e5e7eb] p-8">
-          {status === "confirm" && (
+          {token && status === "confirm" && (
             <>
-              <h1 className="text-[20px] font-semibold mb-2">Unsubscribe</h1>
+              <h1 className="text-[20px] font-semibold mb-2">수신거부 / Unsubscribe</h1>
               <p className="text-[14px] text-[#6b7280] mb-6 leading-relaxed">
-                Are you sure you want to unsubscribe? You will no longer receive emails from us.
+                수신거부하면 앞으로 이 서비스의 이메일을 받지 않습니다. / Confirm to stop receiving emails from this service.
               </p>
               <button
                 onClick={handleUnsubscribe}
                 className="w-full bg-[#111827] text-white h-[40px] rounded-lg text-[13px] font-medium hover:bg-[#374151] transition-colors"
               >
-                Yes, unsubscribe me
+                수신거부하기 / Unsubscribe
               </button>
             </>
           )}
 
           {status === "loading" && (
-            <p className="text-[14px] text-[#6b7280]">Processing...</p>
+            <p className="text-[14px] text-[#6b7280]">처리 중 / Processing...</p>
           )}
 
           {status === "done" && (
@@ -76,17 +72,17 @@ function UnsubscribeForm() {
                   <polyline points="20 6 9 17 4 12" />
                 </svg>
               </div>
-              <h1 className="text-[20px] font-semibold mb-2">Unsubscribed</h1>
+              <h1 className="text-[20px] font-semibold mb-2">수신거부 완료 / Unsubscribed</h1>
               <p className="text-[14px] text-[#6b7280] leading-relaxed">
-                <strong>{email}</strong> has been unsubscribed. You will no longer receive emails.
+                <strong>{email}</strong> 주소가 수신거부 목록에 등록되었습니다. / You will no longer receive emails.
               </p>
             </>
           )}
 
-          {status === "error" && (
+          {(!token || status === "error") && (
             <>
-              <h1 className="text-[20px] font-semibold mb-2">Oops</h1>
-              <p className="text-[14px] text-[#ef4444]">{errorMsg || "Invalid or expired unsubscribe link."}</p>
+              <h1 className="text-[20px] font-semibold mb-2">처리할 수 없습니다 / Unable to process</h1>
+              <p className="text-[14px] text-[#ef4444]">{errorMsg || "유효하지 않은 수신거부 링크입니다. / Invalid unsubscribe link."}</p>
             </>
           )}
         </div>

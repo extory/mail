@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { Resend, type CreateEmailOptions } from "resend";
-import { buildUnsubscribeUrl, wrapHtmlWithUnsubscribeFooter } from "./unsubscribe";
+import { buildUnsubscribeUrl, buildOneClickUnsubscribeUrl, wrapHtmlWithUnsubscribeFooter } from "./unsubscribe";
 import { getSubscribers } from "./db";
 import { initializeSend, getSendReport, claimSend, heartbeatSend, finishSend, setRecipientResult, recipientProblem, type TrackedRecipient } from "./send-tracking";
 import { readFile } from "fs/promises";
@@ -134,7 +134,7 @@ export async function retryUnsentEmails(sendLogId: number) {
         return { from: `${SENDER_NAME} <${SENDER_EMAIL}>`, to: [r.email], subject: report.log.subject,
           tags: [{ name: "send_log_id", value: String(sendLogId) }, { name: "recipient_id", value: String(r.id) }],
           html: wrapHtmlWithUnsubscribeFooter(embedded.html.replace(/\{\{name\}\}/g,r.name || "Subscriber"),unsubUrl),
-          headers: { "List-Unsubscribe": `<${unsubUrl}>`, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" },
+          headers: { "List-Unsubscribe": `<${buildOneClickUnsubscribeUrl(BASE_URL, r.email)}>`, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" },
           ...(embedded.attachments.length ? { attachments: embedded.attachments } : {}),
         };
       });

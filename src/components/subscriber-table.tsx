@@ -21,12 +21,13 @@ interface ImportResultDetail {
   skipped_rows: SkippedRow[];
 }
 
-export function SubscriberTable() {
+export function SubscriberTable({ refreshKey = 0 }: { refreshKey?: number }) {
   const { t } = useLocale();
   const [allSubscribers, setSubscribers] = useState<Subscriber[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
   const [search, setSearch] = useState("");
   const [filterGroupId, setFilterGroupId] = useState<string>("");
+  const [addError, setAddError] = useState("");
   const [newEmail, setNewEmail] = useState("");
   const [newName, setNewName] = useState("");
   const [newGroupIds, setNewGroupIds] = useState<number[]>([]);
@@ -73,7 +74,7 @@ export function SubscriberTable() {
   }, []);
 
   useEffect(() => { fetchGroups(); }, []);
-  useEffect(() => { void fetchSubscribers(); }, [fetchSubscribers]);
+  useEffect(() => { void fetchSubscribers(); }, [fetchSubscribers, refreshKey]);
 
   // Close popover when clicking outside
   useEffect(() => {
@@ -96,20 +97,28 @@ export function SubscriberTable() {
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newEmail) return;
-    await fetch("/api/subscribers", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        email: newEmail,
-        name: newName || undefined,
-        groupIds: newGroupIds,
-      }),
-    });
-    setNewEmail("");
-    setNewName("");
-    setNewGroupIds([]);
-    fetchSubscribers();
-    fetchGroups();
+    setAddError("");
+    try {
+      const response = await fetch("/api/subscribers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: newEmail,
+          name: newName || undefined,
+          groupIds: newGroupIds,
+        }),
+      });
+      if (!response.ok) {
+        const result = await response.json();
+        setAddError(t(result.error === "email_unsubscribed" ? "unsubscribe.blocked" : "unsubscribe.add_error"));
+        return;
+      }
+      setNewEmail("");
+      setNewName("");
+      setNewGroupIds([]);
+      fetchSubscribers();
+      fetchGroups();
+    } catch { setAddError(t("unsubscribe.add_error")); }
   };
 
   const handleRemove = async (id: number) => {
@@ -173,13 +182,12 @@ export function SubscriberTable() {
   };
 
   const retryRow = async (row: SkippedRow) => {
-    if (row.reason === "invalid_email") return;
+    if (row.reason === "invalid_email" || row.reason === "previously_unsubscribed") return;
     setRetrying(true);
     try {
-      // For previously_unsubscribed: re-add as active. Server addSubscriber handles upsert.
-      // For duplicate_in_csv: just add (it's now standalone).
+      // Suppressed addresses must never be retried as active subscriptions.
       const groupIds = newGroupIds;
-      await fetch("/api/subscribers", {
+      const response = await fetch("/api/subscribers", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -188,6 +196,7 @@ export function SubscriberTable() {
           groupIds: groupIds.length > 0 ? groupIds : undefined,
         }),
       });
+      if (!response.ok) return;
       // Remove from skipped list
       setImportResult((prev) =>
         prev
@@ -209,27 +218,25 @@ export function SubscriberTable() {
   const retryAllSkipped = async () => {
     if (!importResult) return;
     const retryable = importResult.skipped_rows.filter(
-      (r) => r.reason !== "invalid_email" && r.reason !== "duplicate_in_csv"
+      (r) => r.reason !== "invalid_email" && r.reason !== "duplicate_in_csv" && r.reason !== "previously_unsubscribed"
     );
     if (retryable.length === 0) return;
     setRetrying(true);
+    const succeeded = new Set<string>();
     for (const row of retryable) {
       try {
-        await fetch("/api/subscribers", {
+        const response = await fetch("/api/subscribers", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            email: row.email,
-            name: row.name || undefined,
-            groupIds: newGroupIds.length > 0 ? newGroupIds : undefined,
-          }),
+          body: JSON.stringify({ email: row.email, name: row.name || undefined, groupIds: newGroupIds }),
         });
-      } catch {
-        // ignore
-      }
+        if (response.ok) succeeded.add(row.email);
+      } catch { /* Keep failed rows visible for a later retry. */ }
     }
-    setImportResult(null);
-    setShowSkipped(false);
+    setImportResult(prev => prev ? {
+      ...prev, skipped_rows: prev.skipped_rows.filter(row => !succeeded.has(row.email)),
+      skipped: Math.max(0, prev.skipped - succeeded.size), imported: prev.imported + succeeded.size,
+    } : prev);
     setRetrying(false);
     fetchSubscribers();
     fetchGroups();
@@ -393,6 +400,7 @@ export function SubscriberTable() {
               {t("subscribers.download_template")}
             </button>
           </div>
+          {addError && <p role="alert" className="text-sm text-danger">{addError}</p>}
         </form>
         <p className="mt-3 text-[12px] text-text-secondary">{t("subscribers.import_hint")}</p>
       </details>
@@ -443,7 +451,7 @@ export function SubscriberTable() {
                 <div className="mt-3 border border-border rounded-lg overflow-hidden">
                   <div className="flex items-center justify-between px-4 py-2 bg-surface border-b border-border-light">
                     <span className="text-[12px] text-text-secondary">{importResult.skipped_rows.length} {t("subscribers.skipped_rows")}</span>
-                    {importResult.skipped_rows.some((r) => r.reason !== "invalid_email" && r.reason !== "duplicate_in_csv") && (
+                    {importResult.skipped_rows.some((r) => r.reason !== "invalid_email" && r.reason !== "duplicate_in_csv" && r.reason !== "previously_unsubscribed") && (
                       <button
                         onClick={retryAllSkipped}
                         disabled={retrying}
@@ -477,7 +485,7 @@ export function SubscriberTable() {
                             </span>
                           </td>
                           <td className="px-4 py-2 text-right">
-                            {row.reason !== "invalid_email" && row.reason !== "duplicate_in_csv" && (
+                            {row.reason !== "invalid_email" && row.reason !== "duplicate_in_csv" && row.reason !== "previously_unsubscribed" && (
                               <button
                                 onClick={() => retryRow(row)}
                                 disabled={retrying}

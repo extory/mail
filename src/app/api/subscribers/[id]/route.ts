@@ -20,6 +20,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   }
   const subscriber = updateSubscriberDetails(Number(id), body.email.trim(), body.name.trim());
   if (!subscriber) return Response.json({ error: "Subscriber not found." }, { status: 404 });
+  if (subscriber === "unsubscribed") return Response.json({ error: "email_unsubscribed" }, { status: 409 });
   if (subscriber === "duplicate") return Response.json({ error: "Email already registered." }, { status: 409 });
   return Response.json(subscriber);
 }
