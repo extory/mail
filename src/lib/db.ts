@@ -351,8 +351,26 @@ export function isEmailSuppressed(email: string): boolean {
     db.prepare("SELECT 1 FROM subscribers WHERE email = ? COLLATE NOCASE AND status = 'unsubscribed'").get(email.trim()));
 }
 
-export function getUnsubscribedEmails(): { email: string; created_at: string }[] {
-  return getDb().prepare("SELECT email, created_at FROM email_suppressions ORDER BY created_at DESC, email").all() as { email: string; created_at: string }[];
+export function getUnsubscribedEmails(): { email: string; created_at: string; subscriber_count: number }[] {
+  return getDb().prepare(`SELECT es.email, es.created_at,
+    (SELECT COUNT(*) FROM subscribers s WHERE s.email = es.email COLLATE NOCASE) AS subscriber_count
+    FROM email_suppressions es ORDER BY es.created_at DESC, es.email`).all() as { email: string; created_at: string; subscriber_count: number }[];
+}
+
+// Remove subscriber records and group memberships, never suppression records.
+export function deleteSuppressedSubscribers(emails: string[]): number {
+  const db = getDb();
+  return db.transaction(() => {
+    const findSuppression = db.prepare("SELECT 1 FROM email_suppressions WHERE email = ? COLLATE NOCASE");
+    if (emails.some(email => !findSuppression.get(email))) throw new Error("not_suppressed");
+    const findSubscribers = db.prepare("SELECT id FROM subscribers WHERE email = ? COLLATE NOCASE");
+    let removed = 0;
+    for (const email of new Set(emails)) {
+      const subscribers = findSubscribers.all(email) as { id: number }[];
+      for (const subscriber of subscribers) removed += deleteSubscribers([subscriber.id]);
+    }
+    return removed;
+  })();
 }
 
 export function removeSubscriber(id: number): void {

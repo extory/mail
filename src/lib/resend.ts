@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { Resend, type CreateEmailOptions } from "resend";
 import { buildUnsubscribeUrl, buildOneClickUnsubscribeUrl, wrapHtmlWithUnsubscribeFooter } from "./unsubscribe";
-import { getSubscribers } from "./db";
+import { getSubscribers, isEmailSuppressed } from "./db";
 import { initializeSend, getSendReport, claimSend, heartbeatSend, finishSend, setRecipientResult, recipientProblem, type TrackedRecipient } from "./send-tracking";
 import { readFile } from "fs/promises";
 import path from "path";
@@ -124,7 +124,8 @@ export async function retryUnsentEmails(sendLogId: number) {
       const batch: TrackedRecipient[] = [];
       for (const recipient of candidates.slice(start,start+batchSize)) {
         const problem = recipientProblem(recipient.email);
-        if (problem) setRecipientResult(recipient,"blocked",problem);
+        if (isEmailSuppressed(recipient.email)) setRecipientResult(recipient,"skipped","Address is on the unsubscribe list");
+        else if (problem) setRecipientResult(recipient,"blocked",problem);
         else if (!active.has(recipient.email.toLowerCase())) setRecipientResult(recipient,"skipped","Subscriber removed, unsubscribed, or address changed");
         else batch.push(recipient);
       }

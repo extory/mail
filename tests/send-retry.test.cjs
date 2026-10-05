@@ -165,3 +165,18 @@ test('scheduled delivery excludes recipients who unsubscribe after scheduling', 
   await tickScheduler();
   assert.deepEqual(requests.flatMap(r => r.payload.map(email => email.to[0])), [allowed.email]);
 });
+
+test('deleted unsubscribed recipients remain blocked even if subscriber records are recreated externally', async () => {
+  const recipient = db.addSubscriber('never-send-again@real-company.co');
+  const log = newLog([recipient]);
+  tracking.initializeSend(log.id, [recipient], false);
+  db.unsubscribeByEmail(recipient.email);
+  db.deleteSuppressedSubscribers([recipient.email]);
+  db.getDb().prepare("INSERT INTO subscribers(email,status) VALUES (?, 'active')").run(recipient.email);
+  requests = []; reply = ok;
+  await mail.retryUnsentEmails(log.id);
+  assert.equal(requests.length, 0);
+  const report = tracking.getSendReport(log.id);
+  assert.equal(report.recipients[0].state, 'skipped');
+  assert.equal(db.isEmailSuppressed(recipient.email), true);
+});

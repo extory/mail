@@ -1,5 +1,13 @@
 const translations = {
   en: {
+    "unsubscribe.delete_hint": "Remove subscriber records only. The unsubscribe list is retained and continues to block all sends. Select up to 1,000 addresses per request.",
+    "unsubscribe.delete_confirm": "Delete subscriber records for {count} selected addresses? Their unsubscribe records will remain and delivery will stay blocked.",
+    "unsubscribe.delete_error": "Could not delete subscriber records. Please try again.",
+    "unsubscribe.delete_success": "Deleted {count} subscriber records. Unsubscribe records are retained.",
+    "unsubscribe.select_all": "Select matching subscriber records",
+    "unsubscribe.delete_selected": "Delete subscriber records ({count})",
+    "unsubscribe.no_subscriber": "No subscriber record",
+
     "unsubscribe.manual_email": "Email to unsubscribe",
     "unsubscribe.manual_add": "Add to unsubscribe list",
     "unsubscribe.manual_hint": "You can block an address even if it is not a subscriber. Existing subscribers are excluded from future sends immediately.",
@@ -401,6 +409,14 @@ const translations = {
     "history.restore_confirm": "Copy this email into a new draft and open it in the composer?",
   },
   ko: {
+    "unsubscribe.delete_hint": "구독자 정보만 삭제합니다. 수신거부 기록과 발송 차단은 계속 유지됩니다. 한 번에 최대 1,000개 주소를 선택하세요.",
+    "unsubscribe.delete_confirm": "선택한 {count}개 주소의 구독자 정보를 삭제할까요? 수신거부 기록은 남고 발송 차단도 유지됩니다.",
+    "unsubscribe.delete_error": "구독자 정보 삭제에 실패했습니다. 다시 시도해 주세요.",
+    "unsubscribe.delete_success": "구독자 정보 {count}건을 삭제했습니다. 수신거부 기록은 유지됩니다.",
+    "unsubscribe.select_all": "검색 결과 중 구독자 정보 전체 선택",
+    "unsubscribe.delete_selected": "구독자 정보 삭제 ({count})",
+    "unsubscribe.no_subscriber": "구독자 정보 없음",
+
     "unsubscribe.manual_email": "수신거부할 이메일",
     "unsubscribe.manual_add": "수신거부 목록에 추가",
     "unsubscribe.manual_hint": "구독자로 등록되지 않은 주소도 추가할 수 있습니다. 기존 구독자는 즉시 이후 발송 대상에서 제외됩니다.",
