@@ -114,7 +114,10 @@ export async function retryUnsentEmails(sendLogId: number) {
   try {
     const report = getSendReport(sendLogId)!;
     const resend = client();
-    const htmlContent = stripCodeFences(report.log.html_content);
+    const htmlContent = stripCodeFences(report.log.html_content).replace(
+      /\bsrc=(["'])\/uploads\/([a-zA-Z0-9-]+\.(?:png|jpg|jpeg|gif|webp))\1/gi,
+      (_match, quote: string, filename: string) => `src=${quote}${BASE_URL.replace(/\/$/, "")}/uploads/${filename}${quote}`
+    );
     const embedded = report.embedImages ? await embedImagesAsCid(htmlContent) : { html: htmlContent, attachments: [] };
     const candidates = report.recipients.filter(r => r.state === "pending" || r.state === "failed");
     const batchSize = embedded.attachments.length ? 1 : 100;

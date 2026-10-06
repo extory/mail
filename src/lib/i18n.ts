@@ -1,5 +1,18 @@
 const translations = {
   en: {
+    "qr.enable": "Include QR code",
+    "qr.hint": "Insert a QR code at the end of the email. Inserting again replaces it; turning this off removes it.",
+    "qr.source": "QR source",
+    "qr.link": "Generate from link",
+    "qr.upload": "Upload QR image",
+    "qr.destination": "Destination URL",
+    "qr.insert": "Generate and insert QR",
+    "qr.file_hint": "Upload an existing QR image (PNG, JPG, GIF, WebP; up to 5 MB). Check it with a scanner before sending.",
+    "qr.file_error": "Choose a PNG, JPG, GIF or WebP image up to 5 MB.",
+    "qr.link_error": "Enter a valid HTTP or HTTPS URL (up to 1,000 characters).",
+    "qr.error": "Could not insert QR code. Please try again.",
+    "qr.inserted": "QR code inserted. Review it in the email preview and save your draft.",
+
     "unsubscribe.delete_hint": "Remove subscriber records only. The unsubscribe list is retained and continues to block all sends. Select up to 1,000 addresses per request.",
     "unsubscribe.delete_confirm": "Delete subscriber records for {count} selected addresses? Their unsubscribe records will remain and delivery will stay blocked.",
     "unsubscribe.delete_error": "Could not delete subscriber records. Please try again.",
@@ -409,6 +422,19 @@ const translations = {
     "history.restore_confirm": "Copy this email into a new draft and open it in the composer?",
   },
   ko: {
+    "qr.enable": "QR코드 추가",
+    "qr.hint": "메일 하단에 QR코드를 삽입합니다. 다시 삽입하면 교체되고 옵션을 끄면 제거됩니다.",
+    "qr.source": "QR코드 삽입 방식",
+    "qr.link": "링크로 QR코드 생성",
+    "qr.upload": "QR코드 이미지 업로드",
+    "qr.destination": "QR코드 연결 링크",
+    "qr.insert": "QR코드 생성 및 삽입",
+    "qr.file_hint": "기존 QR코드 이미지를 올려주세요. PNG·JPG·GIF·WebP, 최대 5MB. 발송 전 스캔하여 확인해 주세요.",
+    "qr.file_error": "5MB 이하의 PNG·JPG·GIF·WebP 이미지를 선택해 주세요.",
+    "qr.link_error": "올바른 http 또는 https 링크를 입력해 주세요. 최대 1,000자입니다.",
+    "qr.error": "QR코드를 삽입하지 못했습니다. 다시 시도해 주세요.",
+    "qr.inserted": "QR코드가 삽입되었습니다. 메일 미리보기에서 확인한 뒤 임시저장해 주세요.",
+
     "unsubscribe.delete_hint": "구독자 정보만 삭제합니다. 수신거부 기록과 발송 차단은 계속 유지됩니다. 한 번에 최대 1,000개 주소를 선택하세요.",
     "unsubscribe.delete_confirm": "선택한 {count}개 주소의 구독자 정보를 삭제할까요? 수신거부 기록은 남고 발송 차단도 유지됩니다.",
     "unsubscribe.delete_error": "구독자 정보 삭제에 실패했습니다. 다시 시도해 주세요.",

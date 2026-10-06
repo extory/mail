@@ -1,6 +1,8 @@
 "use client";
 
 import { EMAIL_LANGUAGES, type EmailLanguage, type ReuseMode } from "@/lib/email-reuse";
+import { QrCodeOptions } from "./qr-code-options";
+import { extractQrBlock, replaceQrBlock } from "@/lib/qr-code";
 import { SendReport } from "./send-report";
 
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
@@ -77,6 +79,7 @@ export function EmailComposer() {
   // type directly into the preview and have it sync back to htmlContent.
   const [inlineEditMode, setInlineEditMode] = useState(false);
   const [useName, setUseName] = useState(false);
+  const [qrBusy, setQrBusy] = useState(false);
   const [images, setImages] = useState<UploadedImage[]>([]);
   const [imageLibraryVersion, setImageLibraryVersion] = useState(0);
   const [imageUploadError, setImageUploadError] = useState(false);
@@ -314,13 +317,13 @@ export function EmailComposer() {
           const newHtml = stripCodeFences(headerMatch[2]);
           if (newSubject) setSubject(newSubject);
           if (newHtml.length >= lastGoodHtml.length || newHtml.length > 0) {
-            setHtmlContent(newHtml);
+            setHtmlContent(replaceQrBlock(newHtml, extractQrBlock(previousHtml)));
             lastGoodHtml = newHtml;
           }
         } else {
           const newHtml = stripCodeFences(fullText);
           if (newHtml.length >= lastGoodHtml.length || newHtml.length > 0) {
-            setHtmlContent(newHtml);
+            setHtmlContent(replaceQrBlock(newHtml, extractQrBlock(previousHtml)));
             lastGoodHtml = newHtml;
           }
         }
@@ -343,6 +346,7 @@ export function EmailComposer() {
       if (finalHtmlOut.trim().length === 0 && lastGoodHtml.length > 0) {
         finalHtmlOut = lastGoodHtml;
       }
+      finalHtmlOut = replaceQrBlock(finalHtmlOut, extractQrBlock(previousHtml));
       if (finalSubject) setSubject(finalSubject);
       else finalSubject = "";
       if (finalHtmlOut.trim().length > 0) setHtmlContent(finalHtmlOut);
@@ -365,7 +369,7 @@ export function EmailComposer() {
       }
     } catch (err) {
       console.error(err);
-      if (sourceSendLogId) { setSubject(previousSubject); setHtmlContent(previousHtml); }
+      if (sourceSendLogId || extractQrBlock(previousHtml)) { setSubject(previousSubject); setHtmlContent(previousHtml); }
       setSendResult(err instanceof Error ? err.message : t("compose.error_generate"));
     } finally {
       setGenerating(false);
@@ -1472,7 +1476,7 @@ export function EmailComposer() {
           </label>
           <button
             onClick={handleGenerate}
-            disabled={generating || editing || (!prompt.trim() && !sourceSendLogId) || !aiReady}
+            disabled={qrBusy || generating || editing || (!prompt.trim() && !sourceSendLogId) || !aiReady}
             className="bg-gradient-to-r from-brand-light to-accent text-white px-6 py-2.5 rounded-lg text-[13px] font-medium hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
           >
             {generating ? (
@@ -1493,7 +1497,7 @@ export function EmailComposer() {
               <div className="h-5 w-px bg-border" />
               <button
                 onClick={handleSave}
-                disabled={saving}
+                disabled={saving || qrBusy}
                 className="border border-border text-text-secondary px-4 py-2.5 rounded-lg text-[13px] font-medium hover:bg-surface hover:text-text-primary disabled:opacity-40 transition-colors flex items-center gap-1.5"
               >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -1510,6 +1514,7 @@ export function EmailComposer() {
           )}
         </div>
       </div>
+        <QrCodeOptions html={htmlContent} disabled={generating || editing || sending || saving} onChange={setHtmlContent} onBusyChange={setQrBusy} />
       </div>
 
       {/* RIGHT: Subject + Preview + Send + Revisions */}
@@ -1760,7 +1765,7 @@ export function EmailComposer() {
               checked={sendAsImage}
               onChange={(e) => setSendAsImage(e.target.checked)}
               className="w-4 h-4 mt-0.5 rounded border-border text-brand focus:ring-brand/20"
-              disabled={sending}
+              disabled={qrBusy || sending}
             />
             <div>
               <span className="text-[13px] text-text-primary font-medium">{t("compose.send_as_image")}</span>
@@ -1778,7 +1783,7 @@ export function EmailComposer() {
                 onChange={(e) => setImageLink(e.target.value)}
                 placeholder={t("compose.image_link_placeholder")}
                 className="w-full max-w-md border border-border rounded-lg px-3 h-[38px] text-[13px] bg-white focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand transition-all placeholder:text-text-muted"
-                disabled={sending}
+                disabled={qrBusy || sending}
               />
               <p className="text-[11px] text-text-muted mt-1">{t("compose.image_link_hint")}</p>
             </div>
@@ -1798,7 +1803,7 @@ export function EmailComposer() {
                   checked={embedMode === "url"}
                   onChange={() => setEmbedMode("url")}
                   className="w-4 h-4 mt-0.5 border-border text-brand focus:ring-brand/20"
-                  disabled={sending}
+                  disabled={qrBusy || sending}
                 />
                 <div>
                   <span className="text-[13px] text-text-primary font-medium">{t("compose.embed_url")}</span>
@@ -1813,7 +1818,7 @@ export function EmailComposer() {
                   checked={embedMode === "cid"}
                   onChange={() => setEmbedMode("cid")}
                   className="w-4 h-4 mt-0.5 border-border text-brand focus:ring-brand/20"
-                  disabled={sending}
+                  disabled={qrBusy || sending}
                 />
                 <div>
                   <span className="text-[13px] text-text-primary font-medium">{t("compose.embed_cid")}</span>
@@ -1848,7 +1853,7 @@ export function EmailComposer() {
                   }
                 }}
                 className="w-4 h-4 mt-0.5 rounded border-border text-brand focus:ring-brand/20"
-                disabled={sending}
+                disabled={qrBusy || sending}
               />
               <div>
                 <span className="text-[13px] text-text-primary font-medium">
@@ -1869,7 +1874,7 @@ export function EmailComposer() {
                     type="date"
                     value={scheduleDate}
                     onChange={(e) => setScheduleDate(e.target.value)}
-                    disabled={sending}
+                    disabled={qrBusy || sending}
                     className="border border-border rounded-lg px-3 h-[38px] text-[13px] bg-white focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand transition-all"
                   />
                 </div>
@@ -1881,7 +1886,7 @@ export function EmailComposer() {
                     type="time"
                     value={scheduleTime}
                     onChange={(e) => setScheduleTime(e.target.value)}
-                    disabled={sending}
+                    disabled={qrBusy || sending}
                     className="border border-border rounded-lg px-3 h-[38px] text-[13px] bg-white focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand transition-all"
                   />
                 </div>
@@ -1909,7 +1914,7 @@ export function EmailComposer() {
             </select>
             <button
               onClick={handleSend}
-              disabled={sending || !subject}
+              disabled={qrBusy || sending || !subject}
               className="bg-brand text-white px-6 py-2.5 rounded-lg text-[13px] font-medium hover:bg-brand-dark disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
             >
               {sending && (
@@ -1964,7 +1969,7 @@ export function EmailComposer() {
             <div className="flex gap-2">
               <button
                 onClick={() => setShowSavePrompt(false)}
-                disabled={saving}
+                disabled={saving || qrBusy}
                 className="flex-1 border border-border text-text-secondary px-4 h-10 rounded-lg text-[13px] font-medium hover:bg-surface hover:text-text-primary disabled:opacity-40 transition-colors"
               >
                 {t("compose.save_prompt_dismiss")}
@@ -1974,7 +1979,7 @@ export function EmailComposer() {
                   await handleSave();
                   setShowSavePrompt(false);
                 }}
-                disabled={saving}
+                disabled={saving || qrBusy}
                 className="flex-1 bg-brand text-white px-4 h-10 rounded-lg text-[13px] font-semibold hover:bg-brand-dark disabled:opacity-40 transition-colors flex items-center justify-center gap-1.5"
               >
                 {saving ? "..." : t("compose.save_prompt_save")}

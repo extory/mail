@@ -180,3 +180,20 @@ test('deleted unsubscribed recipients remain blocked even if subscriber records 
   assert.equal(report.recipients[0].state, 'skipped');
   assert.equal(db.isEmailSuppressed(recipient.email), true);
 });
+
+test('QR images use absolute URLs in normal delivery and CID attachments when requested', async () => {
+  const { createQrBlock } = require('../src/lib/qr-code.ts');
+  const recipient = db.addSubscriber('qr-reader@real-company.co');
+  fs.mkdirSync(path.join(fixture,'public','uploads'),{recursive:true});
+  fs.writeFileSync(path.join(fixture,'public','uploads','qr-test.png'), Buffer.from('qr-test-fixture'));
+  const html = createQrBlock('/uploads/qr-test.png','https://example.com/event');
+  for (const embedImages of [false,true]) {
+    const log = db.addSendLog('QR email',html,1,'sending');
+    requests=[]; reply=ok;
+    await mail.sendBulkEmails(log.subject,html,[recipient],log.id,{embedImages});
+    const payload=embedImages ? requests[0].payload : requests[0].payload[0];
+    assert.match(payload.html,embedImages ? /src="cid:img1"/ : /src="https:\/\/mail.extory.co\/uploads\/qr-test.png"/);
+    assert.ok(payload.html.includes('https://example.com/event'));
+    if(embedImages) assert.equal(payload.attachments.length,1);
+  }
+});
