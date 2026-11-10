@@ -1,5 +1,6 @@
 "use client";
 
+import { AISettings } from "@/components/ai-settings";
 import { useState } from "react";
 import { useLocale } from "@/components/locale-provider";
 
@@ -57,6 +58,8 @@ export default function SettingsPage() {
       <p className="text-[14px] text-text-secondary mt-1 mb-6">
         {t("settings.description")}
       </p>
+
+      <AISettings />
 
       <div className="bg-surface-card border border-border rounded-xl p-5">
         <h2 className="text-[15px] font-semibold text-text-primary mb-4">

@@ -8,4 +8,4 @@ export interface AIProviderModels {
   latest: string | null;
   error?: string;
 }
-export interface AIModelCatalog { providers: AIProviderModels[] }
+export interface AIModelCatalog { defaultProvider?: AIProvider; providers: AIProviderModels[] }

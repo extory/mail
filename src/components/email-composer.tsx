@@ -38,6 +38,7 @@ export function EmailComposer() {
   const [aiCatalog, setAiCatalog] = useState<AIModelCatalog | null>(null);
   const [aiProvider, setAiProvider] = useState<AIProvider>("openai");
   const [aiModel, setAiModel] = useState("auto");
+  const providerInitialized = useRef(false);
   const [modelsLoading, setModelsLoading] = useState(true);
   const [modelsError, setModelsError] = useState(false);
   const loadModels = useCallback(async () => {
@@ -49,8 +50,10 @@ export function EmailComposer() {
       const catalog: AIModelCatalog = await res.json();
       setAiCatalog(catalog);
       setAiModel("auto");
-      setAiProvider(current => catalog.providers.some(p => p.provider === current && p.models.length)
-        ? current : catalog.providers.find(p => p.models.length)?.provider || current);
+      if (!providerInitialized.current) {
+        setAiProvider(catalog.defaultProvider || catalog.providers.find(p => p.configured)?.provider || "openai");
+        providerInitialized.current = true;
+      }
     } catch {
       setModelsError(true);
     } finally {
@@ -1328,7 +1331,7 @@ export function EmailComposer() {
               {(["openai", "gemini"] as const).map(provider => {
                 const entry = aiCatalog?.providers.find(p => p.provider === provider);
                 return <option key={provider} value={provider} disabled={!entry?.models.length}>
-                  {provider === "openai" ? "OpenAI" : "Google Gemini"}
+                  {provider === "openai" ? "ChatGPT (OpenAI)" : "Gemini"}
                   {entry && !entry.configured ? ` · ${t("compose.ai_unconfigured")}` : entry?.error ? ` · ${t("compose.ai_unavailable")}` : ""}
                 </option>;
               })}

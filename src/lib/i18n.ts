@@ -1,5 +1,12 @@
 const translations = {
   en: {
+    "settings.ai_title": "Default AI service",
+    "settings.ai_hint": "Choose the service for email writing and editing. Saved to your account and applied when you open the composer. The model defaults to automatic; you can change it in the composer.",
+    "settings.ai_available": "API key configured",
+    "settings.ai_keys": "ChatGPT uses the OpenAI API. Configure OPENAI_API_KEY or GEMINI_API_KEY on the server to enable the corresponding service.",
+    "settings.ai_saved": "Default AI service saved.",
+    "settings.ai_error": "Could not load or save the AI setting. Check the connection and server API keys, then retry.",
+
     "qr.enable": "Include QR code",
     "qr.hint": "Insert a QR code at the end of the email. Inserting again replaces it; turning this off removes it.",
     "qr.source": "QR source",
@@ -422,6 +429,13 @@ const translations = {
     "history.restore_confirm": "Copy this email into a new draft and open it in the composer?",
   },
   ko: {
+    "settings.ai_title": "기본 AI 서비스",
+    "settings.ai_hint": "메일 작성과 편집에 사용할 서비스를 선택하세요. 계정에 저장되며 작성 화면을 새로 열 때 적용됩니다. 모델은 자동 선택되며 작성 화면에서 변경할 수 있습니다.",
+    "settings.ai_available": "API 키 설정됨",
+    "settings.ai_keys": "ChatGPT는 OpenAI API를 사용합니다. 사용하려는 서비스의 OPENAI_API_KEY 또는 GEMINI_API_KEY를 서버에 설정해야 합니다.",
+    "settings.ai_saved": "기본 AI 서비스를 저장했습니다.",
+    "settings.ai_error": "AI 설정을 불러오거나 저장하지 못했습니다. 연결과 서버 API 키 설정을 확인한 뒤 다시 시도해 주세요.",
+
     "qr.enable": "QR코드 추가",
     "qr.hint": "메일 하단에 QR코드를 삽입합니다. 다시 삽입하면 교체되고 옵션을 끄면 제거됩니다.",
     "qr.source": "QR코드 삽입 방식",
