@@ -1,5 +1,17 @@
 const translations = {
   en: {
+    "addition.title": "Add to this email",
+    "addition.hint": "Insert text and images as entered without regenerating or changing existing content. Images follow the new text.",
+    "addition.position": "Insert position",
+    "addition.start": "Beginning of email",
+    "addition.end": "End of email (before QR code)",
+    "addition.text": "Text to add",
+    "addition.images_hint": "Text or images alone are supported. Up to 10 images, 5 MB each (PNG, JPG, GIF, WebP).",
+    "addition.apply": "Add to email",
+    "addition.undo": "Undo last addition",
+    "addition.success": "Added. Review the preview and save your draft.",
+    "addition.error": "Could not add content. Check image types and size, then try again.",
+
     "settings.ai_title": "Default AI service",
     "settings.ai_hint": "Choose the service for email writing and editing. Saved to your account and applied when you open the composer. The model defaults to automatic; you can change it in the composer.",
     "settings.ai_available": "API key configured",
@@ -429,6 +441,18 @@ const translations = {
     "history.restore_confirm": "Copy this email into a new draft and open it in the composer?",
   },
   ko: {
+    "addition.title": "현재 메일에 내용 추가",
+    "addition.hint": "전체 재생성 없이 입력한 텍스트와 이미지를 그대로 추가합니다. 기존 내용은 유지되며 이미지는 추가 텍스트 뒤에 배치됩니다.",
+    "addition.position": "추가 위치",
+    "addition.start": "본문 맨 위",
+    "addition.end": "본문 맨 아래 (QR코드 앞)",
+    "addition.text": "추가할 텍스트",
+    "addition.images_hint": "텍스트만 또는 이미지만 추가할 수도 있습니다. 이미지 최대 10개, 각 5MB 이하 (PNG·JPG·GIF·WebP).",
+    "addition.apply": "메일에 추가",
+    "addition.undo": "방금 추가 취소",
+    "addition.success": "추가했습니다. 미리보기를 확인하고 임시저장해 주세요.",
+    "addition.error": "내용을 추가하지 못했습니다. 이미지 형식과 용량을 확인한 뒤 다시 시도해 주세요.",
+
     "settings.ai_title": "기본 AI 서비스",
     "settings.ai_hint": "메일 작성과 편집에 사용할 서비스를 선택하세요. 계정에 저장되며 작성 화면을 새로 열 때 적용됩니다. 모델은 자동 선택되며 작성 화면에서 변경할 수 있습니다.",
     "settings.ai_available": "API 키 설정됨",

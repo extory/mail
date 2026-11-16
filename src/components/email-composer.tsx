@@ -3,6 +3,7 @@
 import { EMAIL_LANGUAGES, type EmailLanguage, type ReuseMode } from "@/lib/email-reuse";
 import { QrCodeOptions } from "./qr-code-options";
 import { extractQrBlock, replaceQrBlock } from "@/lib/qr-code";
+import { EmailContentAddition } from "./email-content-addition";
 import { SendReport } from "./send-report";
 
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
@@ -1681,6 +1682,9 @@ export function EmailComposer() {
           )}
         </div>
       )}
+
+      {htmlContent && <EmailContentAddition html={htmlContent} disabled={generating || editing || sending || saving || qrBusy}
+        onChange={next => { cancelEdit(); setHtmlContent(next); }} />}
 
       {/* Selection edit panel */}
       {htmlContent && selectedText && (
