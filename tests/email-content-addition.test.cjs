@@ -44,3 +44,27 @@ test('supports image-only additions and rejects empty or unsafe input',()=>{
   assert.throws(()=>appendEmailContent('<p>Old</p>','x'.repeat(20001),[],'end'));
   assert.throws(()=>appendEmailContent('<p>Old</p>','',Array(11).fill({url:'/uploads/abc.png',description:''}),'end'));
 });
+
+test('per-image layout applies placement, order, dimensions, captions and safe links without rewriting original',()=>{
+  const original='<body><p>Original untouched</p><!-- mail-qr:start --><p>QR</p><!-- mail-qr:end --></body>';
+  const image=(id,placement)=>({url:`/uploads/${id}.png`,description:id,layout:{placement,align:'right',width:240,beforeText:'Above <safe>',afterText:'Below\nSecond line',link:'https://example.com/?a=1&b=2'}});
+  const result=appendEmailContent(original,'New text',[image('first','start'),image('second','before'),image('third','after'),image('last','end')],'end');
+  assert.ok(result.indexOf('first.png')<result.indexOf('<p>Original untouched</p>'));
+  assert.ok(result.indexOf('second.png')<result.indexOf('New text'));
+  assert.ok(result.indexOf('third.png')>result.indexOf('New text'));
+  assert.ok(result.indexOf('last.png')<result.indexOf('<!-- mail-qr:start -->'));
+  assert.match(result,/width="240"/);
+  assert.match(result,/margin:16px 0 16px auto/);
+  assert.match(result,/Above &lt;safe&gt;/);
+  assert.match(result,/Below<br \/>Second line/);
+  assert.match(result,/href="https:\/\/example.com\/\?a=1&amp;b=2"/);
+});
+
+test('full-generation descriptions carry the same layout settings; unsafe options are rejected',()=>{
+  const {imageGenerationDescription,imageLayout}=require('../src/lib/image-layout.ts');
+  const description=imageGenerationDescription('Product photo',{placement:'start',align:'left',width:320,beforeText:'Product title',afterText:'Purchase now',link:'https://example.com/shop'});
+  assert.match(description,/Product photo/);
+  for(const value of ['start','left','320','Product title','Purchase now','https://example.com/shop']) assert.ok(description.includes(value));
+  assert.equal(imageGenerationDescription('unchanged'),'unchanged');
+  for(const options of [{width:0},{width:553},{align:'invalid'},{placement:'invalid'},{link:'javascript:alert(1)'},{link:'https://user:password@example.com'},{beforeText:'x'.repeat(2001)}]) assert.throws(()=>imageLayout(options));
+});

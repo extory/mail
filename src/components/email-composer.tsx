@@ -4,6 +4,8 @@ import { EMAIL_LANGUAGES, type EmailLanguage, type ReuseMode } from "@/lib/email
 import { QrCodeOptions } from "./qr-code-options";
 import { extractQrBlock, replaceQrBlock } from "@/lib/qr-code";
 import { EmailContentAddition } from "./email-content-addition";
+import { ImageLayoutFields } from "./image-layout-fields";
+import { imageGenerationDescription, type ImageLayout } from "@/lib/image-layout";
 import { SendReport } from "./send-report";
 
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
@@ -15,6 +17,7 @@ import { useLocale } from "./locale-provider";
 import { htmlToPlainLines, diffLines, diffStats, type DiffLine } from "@/lib/diff";
 
 interface UploadedImage {
+  layout?: ImageLayout;
   libraryStatus?: "ask" | "saved" | "dismissed";
   url: string;
   filename: string;
@@ -230,6 +233,13 @@ export function EmailComposer() {
 
   const handleGenerate = useCallback(async () => {
     if ((!prompt.trim() && !sourceSendLogId) || !aiReady) return;
+    let preparedImages;
+    try {
+      preparedImages = images.map(img => ({ url: img.url, description: imageGenerationDescription(img.description, img.layout) || undefined }));
+    } catch {
+      setSendResult(t("image_layout.error"));
+      return;
+    }
     const previousSubject = subject;
     const previousHtml = htmlContent;
     setGenerating(true);
@@ -250,9 +260,7 @@ export function EmailComposer() {
           useName,
           provider: aiProvider,
           model: aiModel,
-          images: images.length > 0
-            ? images.map((img) => ({ url: img.url, description: img.description || undefined }))
-            : undefined,
+          images: preparedImages.length > 0 ? preparedImages : undefined,
         }),
       });
 
@@ -1432,6 +1440,7 @@ export function EmailComposer() {
                       disabled={generating}
                       className="w-full border border-border rounded-md px-2.5 h-[32px] text-[12px] bg-white focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand transition-all placeholder:text-text-muted"
                     />
+                    <ImageLayoutFields value={img.layout} disabled={generating || editing} onChange={layout => setImages(current => current.map((item,index) => index === i ? {...item,layout} : item))} />
                     <p className="text-[10px] text-text-muted mt-1 truncate">{img.filename}</p>
                     {img.libraryStatus === "ask" && <ImageSavePrompt url={img.url} filename={img.filename} description={img.description} disabled={generating}
                       onSaved={() => {

@@ -1,5 +1,6 @@
 "use client";
 
+import { ImageLayoutFields } from "./image-layout-fields";
 import Image from "next/image";
 import { useRef, useState } from "react";
 import { appendEmailContent, type AdditionPosition, type AdditionImage } from "@/lib/email-content-addition";
@@ -64,6 +65,7 @@ export function EmailContentAddition({ html, disabled, onChange }: { html: strin
         <input aria-label={t("images.description")} placeholder={t("images.description")} value={image.description} maxLength={1000} disabled={busy} onChange={event => setImages(current => current.map(item => item.url === image.url ? {...item,description:event.target.value} : item))} className="min-w-0 flex-1 rounded-lg border border-border p-2 text-sm" />
         <button type="button" disabled={busy} onClick={() => setImages(current => current.filter(item => item.url !== image.url))} className="text-xs text-danger">{t("remove")}</button>
       </div>
+      <ImageLayoutFields value={image.layout} disabled={busy} onChange={layout => setImages(current => current.map(item => item.url === image.url ? {...item,layout} : item))} />
       {image.libraryStatus === "ask" && <ImageSavePrompt url={image.url} filename={image.filename} description={image.description} disabled={busy}
         onSaved={() => { setImages(current => current.map(item => item.url === image.url ? {...item,libraryStatus:"saved"} : item)); setLibraryVersion(value => value+1); }}
         onSkip={() => setImages(current => current.map(item => item.url === image.url ? {...item,libraryStatus:"dismissed"} : item))} />}
