@@ -8,6 +8,29 @@ import { useLocale } from "./locale-provider";
 export function GroupManager() {
   const { t } = useLocale();
   const [groups, setGroups] = useState<Group[]>([]);
+  const [renamingId, setRenamingId] = useState<number | null>(null);
+  const [renameName, setRenameName] = useState("");
+  const [renaming, setRenaming] = useState(false);
+  const renamingRef = useRef(false);
+  const [renameError, setRenameError] = useState<"duplicate" | "failed" | null>(null);
+  const [renameSaved, setRenameSaved] = useState(false);
+  const handleRename = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (renamingId === null || renamingRef.current || !renameName.trim()) return;
+    renamingRef.current = true; setRenaming(true); setRenameError(null); setRenameSaved(false);
+    try {
+      const response = await fetch(`/api/groups/${renamingId}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: renameName.trim() }),
+      });
+      if (response.status === 409) { setRenameError("duplicate"); return; }
+      if (!response.ok) throw new Error();
+      const updated: { id: number; name: string } = await response.json();
+      setGroups(current => current.map(group => group.id === updated.id ? { ...group, name: updated.name } : group).sort((a,b) => a.name.localeCompare(b.name)));
+      setMembers(current => current.map(member => ({ ...member, groups: member.groups.map(group => group.id === updated.id ? {...group,name:updated.name} : group) })));
+      setRenamingId(null); setRenameSaved(true);
+    } catch { setRenameError("failed"); }
+    finally { renamingRef.current = false; setRenaming(false); }
+  };
   const [newName, setNewName] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -70,7 +93,7 @@ export function GroupManager() {
   useEffect(() => { fetchGroups(); }, []);
 
   const handleToggle = async (groupId: number) => {
-    if (adding || removingRef.current || savingMemberRef.current) return;
+    if (adding || removingRef.current || savingMemberRef.current || renamingRef.current) return;
     setEditingId(null);
     setEditError(null);
     setMemberSearch("");
@@ -200,7 +223,7 @@ export function GroupManager() {
 
   const handleDelete = async (id: number, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (adding || removingRef.current || savingMemberRef.current) return;
+    if (adding || removingRef.current || savingMemberRef.current || renamingRef.current) return;
     if (!confirm(t("groups.delete_confirm"))) return;
     await fetch(`/api/groups/${id}`, { method: "DELETE" });
     if (expandedId === id) {
@@ -223,6 +246,7 @@ export function GroupManager() {
 
   return (
     <div className="space-y-5">
+      {renameSaved && <p role="status" className="text-sm text-brand">{t("groups.rename_saved")}</p>}
       {/* Create group form */}
       <div className="bg-surface-card border border-border rounded-xl p-5">
         <form onSubmit={handleCreate} className="flex flex-wrap gap-3 items-end">
@@ -295,10 +319,11 @@ export function GroupManager() {
                       <polyline points="6 9 12 15 18 9" />
                     </svg>
                   </button>
-                  <div className="flex items-center gap-2">
+                  <div className="flex shrink-0 flex-col sm:flex-row items-center gap-2">
+                    <button type="button" disabled={adding || removing || editingId !== null || renaming} onClick={() => { setRenamingId(group.id); setRenameName(group.name); setRenameError(null); setRenameSaved(false); }} className="text-brand text-xs min-h-8">{t("groups.rename")}</button>
                     <button
                       onClick={(e) => handleDelete(group.id, e)}
-                      disabled={adding || removing || editingId !== null}
+                      disabled={adding || removing || editingId !== null || renaming}
                       className="text-text-muted hover:text-danger text-[12px] transition-colors"
                     >
                       {t("delete")}
@@ -307,6 +332,16 @@ export function GroupManager() {
                   </div>
                 </div>
 
+                {renamingId === group.id && <form onSubmit={handleRename} className="mx-5 mb-5 space-y-3 rounded-lg border border-brand/20 bg-surface p-4">
+                  <label className="block text-sm">{t("groups.name")}
+                    <input value={renameName} onChange={event => setRenameName(event.target.value)} disabled={renaming} required maxLength={200} autoFocus className="mt-1 w-full min-w-0 rounded-lg border border-border bg-white px-3 py-2" />
+                  </label>
+                  <div className="flex flex-wrap gap-3">
+                    <button type="submit" disabled={renaming || !renameName.trim()} className="rounded-lg bg-brand px-4 py-2 text-sm text-white disabled:opacity-50">{renaming ? t("loading") : t("save")}</button>
+                    <button type="button" disabled={renaming} onClick={() => { setRenamingId(null); setRenameError(null); }} className="px-3 py-2 text-sm text-text-secondary">{t("cancel")}</button>
+                  </div>
+                  {renameError && <p role="alert" className="text-sm text-danger">{t(renameError === "duplicate" ? "groups.rename_duplicate" : "groups.rename_error")}</p>}
+                </form>}
                 {/* Expanded member list */}
                 {isExpanded && (
                   <div className="border-t border-border-light">
@@ -322,7 +357,7 @@ export function GroupManager() {
                           onChange={(e) => setAddEmails(e.target.value)}
                           placeholder={t("groups.add_subscribers_placeholder")}
                           rows={2}
-                          disabled={adding || removing || editingId !== null}
+                          disabled={adding || removing || editingId !== null || renaming}
                           className="min-w-0 flex-1 border border-border rounded-lg px-3 py-2 text-[13px] bg-white focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand transition-all placeholder:text-text-muted resize-y"
                         />
                         <button
@@ -389,7 +424,7 @@ export function GroupManager() {
                         <thead>
                           <tr className="bg-surface">
                             <th className="w-12 px-4 py-2.5">
-                              <input ref={selectAllRef} type="checkbox" aria-label={t("subscribers.select_results")} checked={allSelected} disabled={adding || removing || editingId !== null}
+                              <input ref={selectAllRef} type="checkbox" aria-label={t("subscribers.select_results")} checked={allSelected} disabled={adding || removing || editingId !== null || renaming}
                                 onChange={e => setSelectedIds(e.target.checked ? new Set(filteredMembers.map(member => member.id)) : new Set())}
                                 className="h-4 w-4 accent-brand" />
                             </th>
@@ -403,7 +438,7 @@ export function GroupManager() {
                           {filteredMembers.map((sub) => (
                             <tr key={sub.id} className="border-t border-border-light">
                               <td className="px-4 py-2.5">
-                                <input type="checkbox" aria-label={t("groups.select_member", { email: sub.email })} checked={selectedIds.has(sub.id)} disabled={adding || removing || editingId !== null}
+                                <input type="checkbox" aria-label={t("groups.select_member", { email: sub.email })} checked={selectedIds.has(sub.id)} disabled={adding || removing || editingId !== null || renaming}
                                   onChange={e => {
                                     const checked = e.target.checked;
                                     setSelectedIds(prev => { const next = new Set(prev); if (checked) next.add(sub.id); else next.delete(sub.id); return next; });
@@ -413,7 +448,7 @@ export function GroupManager() {
                               <td className="px-5 py-2.5 text-text-secondary">{sub.name || "-"}</td>
                               <td className="px-5 py-2.5 text-text-muted">{new Date(sub.created_at).toLocaleDateString()}</td>
                               <td className="px-5 py-2.5">
-                                <button type="button" disabled={adding || removing || editingId !== null}
+                                <button type="button" disabled={adding || removing || editingId !== null || renaming}
                                   onClick={() => { setEditingId(sub.id); setEditEmail(sub.email); setEditName(sub.name || ""); setEditError(null); }}
                                   className="text-brand text-[12px] whitespace-nowrap disabled:opacity-40">{t("edit")}</button>
                               </td>

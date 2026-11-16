@@ -108,3 +108,32 @@ test('duplicate addresses and invalid edits do not change subscriber records', a
   assert.equal((await subscriberRoutes.PATCH(new Request('http://localhost',{method:'PATCH',body:'{'}),context(sub.id))).status,400);
   assert.deepEqual(db.getSubscribers(),before);
 });
+
+const groupRoutes = require('../src/app/api/groups/[id]/route.ts');
+const renameRequest = body => new Request('http://localhost/api/groups/1',{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
+
+test('renaming a group preserves membership, group ID and scheduled recipients', async () => {
+  const group = db.addGroup('Original group name');
+  const sub = db.addSubscriber('rename-member@company.co','Member',[group.id]);
+  const scheduled = db.createScheduledSend('Scheduled','<p>Mail</p>',null,group.id,false,'2099-01-01T00:00:00.000Z',null);
+  const response = await groupRoutes.PATCH(renameRequest({name:'  Renamed group  '}),context(group.id));
+  assert.equal(response.status,200);
+  assert.deepEqual(await response.json(),{id:group.id,name:'Renamed group'});
+  assert.equal(db.getGroups().find(item=>item.id===group.id).name,'Renamed group');
+  assert.equal(db.getSubscribers(undefined,group.id)[0].id,sub.id);
+  assert.equal(db.getSubscribers(undefined,group.id)[0].groups[0].name,'Renamed group');
+  assert.equal(db.getScheduledSend(scheduled.id).group_id,group.id);
+  assert.equal((await groupRoutes.PATCH(renameRequest({name:'Renamed group'}),context(group.id))).status,200);
+});
+
+test('rename rejects duplicates, empty or malformed names and missing groups without changing data', async () => {
+  const group = db.addGroup('Rename validation original');
+  db.addGroup('Existing group');
+  assert.equal((await groupRoutes.PATCH(renameRequest({name:' existing GROUP '}),context(group.id))).status,409);
+  for(const body of [null,{}, {name:3},{name:''},{name:'   '},{name:'x'.repeat(201)}]) {
+    assert.equal((await groupRoutes.PATCH(renameRequest(body),context(group.id))).status,400);
+  }
+  for(const id of ['bad','0','-1','1.5','9007199254740992']) assert.equal((await groupRoutes.PATCH(renameRequest({name:'Valid'}),context(id))).status,400);
+  assert.equal((await groupRoutes.PATCH(renameRequest({name:'Valid'}),context(999999))).status,404);
+  assert.equal(db.getGroups().find(item=>item.id===group.id).name,'Rename validation original');
+});

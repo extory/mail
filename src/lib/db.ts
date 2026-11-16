@@ -177,6 +177,16 @@ export function addGroup(name: string): Group {
   return db.prepare("SELECT *, 0 as subscriber_count FROM groups WHERE id = ?").get(result.lastInsertRowid) as Group;
 }
 
+export function renameGroup(id: number, name: string): { id: number; name: string } | "duplicate" | null {
+  const db = getDb();
+  return db.transaction(() => {
+    if (!db.prepare("SELECT id FROM groups WHERE id = ?").get(id)) return null;
+    if (db.prepare("SELECT id FROM groups WHERE trim(name) = ? COLLATE NOCASE AND id != ?").get(name, id)) return "duplicate";
+    db.prepare("UPDATE groups SET name = ? WHERE id = ?").run(name, id);
+    return { id, name };
+  })();
+}
+
 export function deleteGroup(id: number): void {
   const db = getDb();
   db.prepare("DELETE FROM subscriber_groups WHERE group_id = ?").run(id);

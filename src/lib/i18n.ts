@@ -1,5 +1,10 @@
 const translations = {
   en: {
+    "groups.rename": "Rename",
+    "groups.rename_duplicate": "A group with this name already exists.",
+    "groups.rename_error": "Could not rename the group. Please try again.",
+    "groups.rename_saved": "Group renamed. Subscriber memberships are unchanged.",
+
     "image_layout.error": "Check image width (80–552 px) and HTTP/HTTPS links.",
     "image_layout.title": "Image placement and text",
     "image_layout.position": "Image position",
@@ -457,6 +462,11 @@ const translations = {
     "history.restore_confirm": "Copy this email into a new draft and open it in the composer?",
   },
   ko: {
+    "groups.rename": "이름 변경",
+    "groups.rename_duplicate": "같은 이름의 그룹이 이미 있습니다.",
+    "groups.rename_error": "그룹명을 변경하지 못했습니다. 다시 시도해 주세요.",
+    "groups.rename_saved": "그룹명을 변경했습니다. 기존 구독자 연결은 유지됩니다.",
+
     "image_layout.error": "이미지 너비(80~552px)와 http/https 클릭 링크를 확인해 주세요.",
     "image_layout.title": "이미지 배치 조건 및 추가 텍스트",
     "image_layout.position": "이미지 위치",
