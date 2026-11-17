@@ -47,7 +47,7 @@ export function getSendReport(id: number) {
   if (!log) return null;
   const tracking = connection.prepare("SELECT * FROM send_tracking WHERE send_log_id = ?").get(id) as {embed_images: number; lock_until: number; lock_token: string | null} | undefined;
   const recipients = connection.prepare("SELECT * FROM send_recipients WHERE send_log_id = ? ORDER BY id").all(id) as TrackedRecipient[];
-  const accepted = connection.prepare("SELECT recipient_email, resend_id FROM sent_emails WHERE send_log_id = ?").all(id) as {recipient_email: string; resend_id: string}[];
+  const accepted = connection.prepare("SELECT recipient_email, resend_id, last_event FROM sent_emails WHERE send_log_id = ? ORDER BY id").all(id) as {recipient_email: string; resend_id: string; last_event: string | null}[];
   const count = (state: RecipientState) => recipients.filter(r => r.state === state).length;
   const active = new Set((connection.prepare("SELECT email FROM subscribers WHERE status = 'active'").all() as {email: string}[]).map(r => r.email.toLowerCase()));
   const retryable = recipients.filter(r => ["pending", "failed"].includes(r.state) && active.has(r.email.toLowerCase()) && !recipientProblem(r.email)).length;

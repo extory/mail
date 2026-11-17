@@ -197,3 +197,23 @@ test('QR images use absolute URLs in normal delivery and CID attachments when re
     if(embedImages) assert.equal(payload.attachments.length,1);
   }
 });
+
+test('report API includes saved delivery results for tracked and legacy sends without changing retry eligibility', async () => {
+  const route = require('../src/app/api/history/[id]/route.ts');
+  for (const tracked of [true, false]) {
+    const recipient = seed(1, `report-${tracked}`)[0];
+    const log = db.addSendLog('Report', '<p>Report</p>', 1, 'sent');
+    const providerId = `report-provider-${tracked}`;
+    if (tracked) {
+      tracking.initializeSend(log.id, [recipient], false);
+      tracking.setRecipientResult(tracking.getSendReport(log.id).recipients[0], 'accepted', undefined, providerId);
+    } else db.saveSentEmail(log.id, providerId, recipient.email);
+    db.recordEmailEvent(providerId, 'opened');
+    const response = await route.GET(new Request('http://localhost'), {params: Promise.resolve({id: String(log.id)})});
+    const report = await response.json();
+    assert.equal(report.tracked, tracked);
+    assert.equal(report.accepted[0].recipient_email, recipient.email);
+    assert.equal(report.accepted[0].last_event, 'opened');
+    assert.equal(report.retryable, 0);
+  }
+});
