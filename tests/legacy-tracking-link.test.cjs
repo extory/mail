@@ -24,8 +24,31 @@ test('retains HR paths and campaign query parameters', () => {
   assert.equal(get('/CL0/' + encodeURIComponent(target) + '/1/message/signature').headers.get('location'), target);
 });
 
-test('rejects malformed links and destinations outside the HR site', () => {
-  for (const target of ['https://evil.test/', 'https://hr.aline.team.evil.test/', 'http://hr.aline.team/', 'https://user@hr.aline.team/', 'https://hr.aline.team:444/', 'javascript:alert(1)']) {
+test('restores the second reported Aline link from the October campaign', () => {
+  const result = get('/CL0/https:%2F%2Faline.team/1/010601a0fb3fa122-e43342a7-28c9-4b8d-9948-3e27b2d4ee68-000000/apttVr92Hn4ZK1lPhHTWFy2WwnZZHkzmrEio85cZk38=258');
+  assert.equal(result.status, 307);
+  assert.equal(result.headers.get('location'), 'https://aline.team/');
+});
+
+test('restores every distinct web destination found in all 70 send logs', () => {
+  for (const target of ['https://hr.aline.team/', 'https://extory.co/', 'https://aline.team', 'https://alineteam.kr', 'https://alineteam.kr/login', 'https://showcase.aline.team']) {
+    const result = get('/CL0/' + encodeURIComponent(target) + '/2/message/signature');
+    assert.equal(result.status, 307, target);
+    assert.equal(result.headers.get('location'), new URL(target).href);
+  }
+});
+
+test('preserves per-recipient unsubscribe tokens without following or submitting them', () => {
+  for (const pathname of ['/unsubscribe', '/api/unsubscribe']) {
+    const target = 'https://mail.extory.co' + pathname + '?token=example-token';
+    const result = get('/CL0/' + encodeURIComponent(target) + '/1/message/signature');
+    assert.equal(result.status, 307);
+    assert.equal(result.headers.get('location'), target);
+  }
+});
+
+test('rejects malformed links and destinations outside the audited sites', () => {
+  for (const target of ['https://evil.test/', 'https://hr.aline.team.evil.test/', 'http://hr.aline.team/', 'https://user@hr.aline.team/', 'https://hr.aline.team:444/', 'javascript:alert(1)', 'https://mail.extory.co/CL0/loop', 'https://mail.extory.co/api/send', 'https://mail.extory.co/unsubscribe/other', 'https://aline.team.evil.test/']) {
     assert.equal(get('/CL0/' + encodeURIComponent(target) + '/1/message/signature').status, 404);
   }
   assert.equal(get('/CL0/%ZZ/1/message/signature').status, 404);
