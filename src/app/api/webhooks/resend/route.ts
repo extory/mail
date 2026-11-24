@@ -49,7 +49,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const { type, data } = payload as { type: string; data: { email_id?: string; bounce?: unknown; failed?: unknown; click?: unknown } };
+    const { type, data } = payload as { type: string; data: { email_id?: string; bounce?: unknown; failed?: unknown; suppressed?: unknown; click?: unknown } };
 
     if (!type || !data?.email_id) {
       return Response.json({ error: "Invalid payload" }, { status: 400 });
@@ -64,6 +64,8 @@ export async function POST(request: NextRequest) {
       "email.opened": "opened",
       "email.clicked": "clicked",
       "email.failed": "failed",
+      // Suppressed messages never reach the recipient and belong in failed totals.
+      "email.suppressed": "failed",
     };
 
     const eventType = eventMap[type];
@@ -74,6 +76,7 @@ export async function POST(request: NextRequest) {
     let extraData: string | undefined;
     if (data.bounce) extraData = JSON.stringify(data.bounce);
     else if (data.failed) extraData = JSON.stringify(data.failed);
+    else if (type === "email.suppressed") extraData = JSON.stringify({ reason: "suppressed", details: data.suppressed });
     else if (data.click) extraData = JSON.stringify(data.click);
 
     recordEmailEvent(data.email_id, eventType, extraData);

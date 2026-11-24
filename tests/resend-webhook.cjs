@@ -5,11 +5,11 @@ const base=path.resolve(__dirname, '..');
 const ts=require(base+'/node_modules/typescript');
 const {Webhook}=require(base+'/node_modules/svix');
 const filename=path.join(base, 'src/app/api/webhooks/resend/route.ts');
-let writes=0;
+let writes=0, lastWrite;
 function load(secret){
  if(secret)process.env.RESEND_WEBHOOK_SECRET=secret; else delete process.env.RESEND_WEBHOOK_SECRET;
  const m=new Module(filename,module);m.filename=filename;m.paths=Module._nodeModulePaths(base);
- m.require=(name)=>name==='@/lib/db'?{recordEmailEvent(){writes++}}:require(require.resolve(name,{paths:[base]}));
+ m.require=(name)=>name==='@/lib/db'?{recordEmailEvent(...args){writes++;lastWrite=args}}:require(require.resolve(name,{paths:[base]}));
  m._compile(ts.transpileModule(fs.readFileSync(filename,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,filename);
  return m.exports;
 }
@@ -25,5 +25,10 @@ const req=(text=body,headers={})=>new Request('https://mail.test/api/webhooks/re
  assert.equal((await route.POST(req(body,headers))).status,200);assert.equal(writes,1);
  assert.equal((await route.POST(req(body+' ',headers))).status,401);assert.equal(writes,1);
  assert.equal((await route.POST(req('x'.repeat(262145),headers))).status,413);
+ const suppressed=JSON.stringify({type:'email.suppressed',data:{email_id:'suppressed-test',suppressed:{reason:'Previously bounced'}}});
+ const signed={...headers,'svix-signature':wh.sign('msg_test',now,suppressed)};
+ assert.equal((await route.POST(req(suppressed,signed))).status,200);
+ assert.equal(lastWrite[1],'failed');
+ assert.equal(JSON.parse(lastWrite[2]).reason,'suppressed');
  console.log('PASS: missing secret, missing signature, valid signature, tampered payload, streaming size limit. No real events written.');
 })().catch(e=>{console.error(e);process.exitCode=1});
