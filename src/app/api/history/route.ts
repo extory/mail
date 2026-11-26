@@ -1,6 +1,5 @@
-import { getSendLogs } from "@/lib/db";
-
-export async function GET() {
-  const logs = getSendLogs();
-  return Response.json(logs);
+import { getHistoryPage } from "@/lib/db";
+import { readPage } from "@/lib/server-pagination";
+export async function GET(request: Request) {
+  return Response.json(getHistoryPage(readPage(new URL(request.url).searchParams)));
 }

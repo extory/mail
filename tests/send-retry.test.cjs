@@ -233,7 +233,7 @@ test('hard-bounce removal validates the campaign and preserves history and stati
   const request = body => new Request('http://localhost', {method:'DELETE',body:JSON.stringify(body)});
   const context = id => ({params:Promise.resolve({id:String(id)})});
   assert.equal((await route.DELETE(request({emails:[recipients[0].email]}),context(log.id))).status,400);
-  assert.equal((await route.DELETE(request({confirmed:true,emails:recipients.slice(0,2).map(r=>r.email)}),context(log.id))).status,400);
+  assert.equal((await route.DELETE(request({confirmed:true,emails:[recipients[0].email, 'unrelated@real-company.co']}),context(log.id))).status,400);
   assert.ok(db.getDb().prepare('SELECT id FROM subscribers WHERE id=?').get(recipients[0].id));
   const other = db.addSendLog('Other', 'x', 0, 'sent');
   assert.equal((await route.DELETE(request({confirmed:true,emails:[recipients[0].email]}),context(other.id))).status,400);
@@ -250,15 +250,16 @@ test('hard-bounce removal validates the campaign and preserves history and stati
   assert.equal((await route.DELETE(new Request('http://localhost',{method:'DELETE',body:'bad json'}),context(log.id))).status,400);
 });
 
-test('malformed and unknown bounce details never authorize subscriber deletion', () => {
+test('unknown bounce details remain unclassified but explicitly bounced addresses can be deleted', () => {
   const r = seed(1,'malformed-bounce')[0];
   const log = db.addSendLog('Unknown bounce', 'x', 1, 'sent');
   db.saveSentEmail(log.id,'malformed-bounce-id',r.email);
   for (const data of ['not json', 'null', '{"type":"Undetermined"}', '{"message":"hard bounce"}']) {
     db.recordEmailEvent('malformed-bounce-id','bounced',data);
     assert.equal(tracking.getSendReport(log.id).accepted[0].hardBounce,false);
-    assert.throws(()=>tracking.deleteHardBouncedSubscribers(log.id,[r.email]),/not_hard_bounced/);
+    assert.equal(tracking.getSendReport(log.id).accepted[0].bounced,true);
   }
+  assert.equal(tracking.deleteHardBouncedSubscribers(log.id,[r.email]),1);
 });
 
 test('suppression statistics include old imports and webhooks without counting ordinary failures; manual removal preserves results', async () => {
@@ -297,4 +298,74 @@ test('suppression statistics include old imports and webhooks without counting o
   assert.deepEqual(db.getOverallStats(),before);
   assert.deepEqual(db.getSendLogStats().find(r=>r.send_log_id===log.id),stats);
   assert.deepEqual(tracking.getSendReport(log.id).accepted.map(r=>r.subscriberExists),[false,false,false,true,true,true]);
+});
+
+test('server report filters classify all bounce types and page before returning recipients', async () => {
+  const route = require('../src/app/api/history/[id]/route.ts');
+  for (const tracked of [false,true]) {
+    const recipients = seed(8, `filter-${tracked}`);
+    const log = newLog(recipients);
+    if (tracked) tracking.initializeSend(log.id,recipients,false);
+    const events = ['bounced','bounced','bounced','suppressed','failed','delivered','sent','delivery_delayed'];
+    recipients.forEach((r,i)=> {
+      const providerId = `filter-${tracked}-${i}`;
+      if (tracked) tracking.setRecipientResult(tracking.getSendReport(log.id).recipients[i],'accepted',undefined,providerId);
+      else db.saveSentEmail(log.id,providerId,r.email);
+      db.recordEmailEvent(providerId,events[i],i===0?'malformed':JSON.stringify({type:i===1?'Permanent':i===2?'Transient':undefined}));
+    });
+    const get = async (filter,page=1) => {
+      const response = await route.GET(new Request(`http://localhost/api/history/${log.id}?page=${page}&pageSize=2&filter=${filter}`),{params:Promise.resolve({id:String(log.id)})});
+      assert.equal(response.status,200);
+      return response.json();
+    };
+    const all = await get('all');
+    assert.equal(all.pagination.total,8);
+    assert.equal(all.recipients.length,2);
+    assert.equal(all.accepted.length,2);
+    assert.equal(all.counts.unreached,7);
+    assert.equal(all.counts.hard_bounce,1);
+    assert.equal(all.counts.soft_bounce,1);
+    const bounced = await get('bounced',2);
+    assert.equal(bounced.pagination.total,3);
+    assert.equal(bounced.recipients.length,1);
+    assert.equal(bounced.accepted[0].softBounce,true);
+    const clamped = await get('bounced',999);
+    assert.equal(clamped.pagination.page,2);
+    const delivered = await get('delivered');
+    assert.equal(delivered.pagination.total,1);
+    assert.equal(delivered.accepted[0].last_event,'delivered');
+    const empty = await get('clicked');
+    assert.equal(empty.pagination.total,0);
+    assert.equal(empty.recipients.length,0);
+    assert.equal((await route.GET(new Request('http://localhost?filter=invalid'),{params:Promise.resolve({id:String(log.id)})})).status,400);
+    assert.equal(tracking.deleteHardBouncedSubscribers(log.id,recipients.slice(0,3).map(r=>r.email)),3);
+    assert.equal((await get('bounced')).counts.bounced,3);
+  }
+});
+
+test('server list pagination bounds sizes, filters before paging, and keeps overall totals', async () => {
+  const {readPage} = require('../src/lib/server-pagination.ts');
+  assert.deepEqual(readPage(new URLSearchParams('page=-2&pageSize=99999')),{page:1,pageSize:200});
+  assert.deepEqual(readPage(new URLSearchParams('page=NaN&pageSize=0')),{page:1,pageSize:30});
+  const group = db.addGroup('Paging fixture');
+  const recipients = seed(7,'paging-fixture');
+  recipients.slice(0,4).forEach(r=>db.updateSubscriberGroups(r.id,[group.id]));
+  const first = db.querySubscribers('paging-fixture',group.id,{page:1,pageSize:3});
+  const last = db.querySubscribers('paging-fixture',group.id,{page:2,pageSize:3});
+  assert.equal(first.total,4);
+  assert.equal(first.items.length,3);
+  assert.equal(last.items.length,1);
+  assert.equal(new Set([...first.items,...last.items].map(r=>r.id)).size,4);
+  assert.equal(db.querySubscribers('paging-fixture%',group.id,{page:1,pageSize:3}).total,0);
+  const clamped = db.querySubscribers('paging-fixture',group.id,{page:999,pageSize:3});
+  assert.equal(clamped.page,2);
+  const history = require('../src/app/api/history/route.ts');
+  const statistics = require('../src/app/api/statistics/route.ts');
+  const h = await (await history.GET(new Request('http://localhost?page=1&pageSize=2'))).json();
+  const stats = await (await statistics.GET(new Request('http://localhost?page=1&pageSize=2'))).json();
+  assert.equal(h.items.length,2);
+  assert.equal(stats.campaigns.length,2);
+  assert.equal(stats.total,h.total);
+  assert.deepEqual(stats.overall, db.getOverallStats());
+  assert.deepEqual(stats.campaigns.map(r=>r.send_log_id),h.items.map(r=>r.id));
 });

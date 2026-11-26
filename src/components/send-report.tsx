@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import type { getSendReport } from "@/lib/send-tracking";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { getSendReportPage } from "@/lib/send-tracking";
 import { useLocale } from "./locale-provider";
 import type { TranslationKey } from "@/lib/i18n";
 
@@ -12,7 +12,10 @@ const eventLabels: Record<string, TranslationKey> = {
   suppressed: "send_report.event.suppressed", clicked: "send_report.event.clicked", failed: "send_report.event.failed",
 };
 
-type Report = NonNullable<ReturnType<typeof getSendReport>>;
+import { Pagination, type PageSize } from "./pagination";
+import { REPORT_FILTERS, type ReportFilter } from "@/lib/report-filters";
+
+type Report = NonNullable<ReturnType<typeof getSendReportPage>>;
 export function SendReport({ id, onUpdated }: {id: number; onUpdated?: () => void}) {
   const { t } = useLocale();
   const [report, setReport] = useState<Report | null>(null);
@@ -21,18 +24,29 @@ export function SendReport({ id, onUpdated }: {id: number; onUpdated?: () => voi
   const [originals, setOriginals] = useState("");
   const [confirmed, setConfirmed] = useState(false);
   const [embedImages, setEmbedImages] = useState(false);
-  const [showAccepted, setShowAccepted] = useState(true);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState<PageSize>(30);
   const [selected, setSelected] = useState<string[]>([]);
-  const [hardOnly, setHardOnly] = useState(false);
+  const [filter, setFilter] = useState<ReportFilter>("all");
   const [notice, setNotice] = useState<string | null>(null);
+  const requestId = useRef(0);
   const load = useCallback(async () => {
-    const res = await fetch(`/api/history/${id}`,{cache:"no-store"});
+    const current = ++requestId.current;
+    const res = await fetch(`/api/history/${id}?page=${page}&pageSize=${pageSize}&filter=${filter}`,{cache:"no-store"});
     if (!res.ok) throw new Error("Could not load send report");
-    setReport(await res.json());
+    const data = await res.json();
+    if (current !== requestId.current) return;
+    setReport(data);
+    setPage(data.pagination.page);
     setError(null);
     setSelected([]);
-  }, [id]);
-  useEffect(() => { setReport(null); load().catch(() => setError(t("send_report.error"))); }, [load,t]);
+  }, [id, page, pageSize, filter]);
+  useEffect(() => {
+    let active = true;
+    setReport(null);
+    load().catch(() => {if (active) setError(t("send_report.error"));});
+    return () => {active = false;};
+  }, [load,t]);
   const act = async (action: "retry" | "recover") => {
     if (busy || !report) return;
     if (action === "retry" && !confirm(t("send_report.confirm",{count:report.retryable}))) return;
@@ -60,12 +74,10 @@ export function SendReport({ id, onUpdated }: {id: number; onUpdated?: () => voi
     finally { setBusy(false); }
   };
   const details = new Map(report?.accepted.map(r => [r.resend_id, r]));
-  const eligible = [...new Set(report?.accepted.filter(r => (r.hardBounce || r.suppressed) && r.subscriberExists).map(r => r.recipient_email.toLowerCase()))];
+  const eligible = [...new Set(report?.accepted.filter(r => (r.bounced || r.suppressed) && r.subscriberExists).map(r => r.recipient_email.toLowerCase()))];
   const events = new Map(report?.accepted.map(r => [r.resend_id, r.last_event]));
-  const rows = report?.tracked ? report.recipients : (report?.accepted.map(r => ({
-    id: r.resend_id, email: r.recipient_email, state: "accepted" as const, error: null, resend_id: r.resend_id,
-  })) ?? []);
-  const visibleRows = rows.filter(r => hardOnly ? !!(r.resend_id && (details.get(r.resend_id)?.hardBounce || details.get(r.resend_id)?.suppressed)) : !report?.tracked || showAccepted || r.state !== "accepted");
+  const rows = report?.recipients ?? [];
+  const visibleRows = rows;
   return <section className="rounded-xl border border-border bg-surface-card p-4 space-y-3">
     <div className="flex flex-wrap justify-between gap-3">
       <h3 className="text-[14px] font-semibold">{t("send_report.title")} #{id}</h3>
@@ -79,7 +91,7 @@ export function SendReport({ id, onUpdated }: {id: number; onUpdated?: () => voi
         <p className="text-[13px]">{t("send_report.confirm",{count:report.retryable})}</p>
         <button type="button" disabled={busy || report.busy} onClick={() => act("retry")} className="bg-brand text-white rounded-lg px-4 py-2 text-[13px] disabled:opacity-40">{busy || report.busy ? t("loading") : t("send_report.retry")}</button>
       </div>}
-      <label className="flex gap-2 text-[12px]"><input type="checkbox" checked={showAccepted} onChange={e => setShowAccepted(e.target.checked)} />{t("send_report.show_accepted")}</label>
+
 
     </> : <>
       <p className="text-[13px] text-text-secondary">{t("send_report.legacy")}</p>
@@ -95,8 +107,10 @@ export function SendReport({ id, onUpdated }: {id: number; onUpdated?: () => voi
     {report && <div className="space-y-2">
       <p className="text-[12px] text-text-secondary">{t("send_report.hard_hint")}</p>
       <div className="flex flex-wrap gap-3 items-center text-[12px]">
-        <label className="flex gap-2"><input type="checkbox" checked={hardOnly} onChange={e => {setHardOnly(e.target.checked); setSelected([]);}} />{t("send_report.hard_only")}</label>
-        <button type="button" disabled={busy || !eligible.length} onClick={() => {setHardOnly(true); setSelected(eligible.slice(0, 1000));}} className="text-brand disabled:opacity-40">{t("send_report.select_hard")}</button>
+        <label>{t("send_report.filter")} <select value={filter} disabled={busy} onChange={e => {setFilter(e.target.value as ReportFilter); setPage(1); setSelected([]);}} className="border border-border rounded p-2">
+          {REPORT_FILTERS.map(value => <option key={value} value={value}>{t(`send_report.filter.${value}`)} ({report.counts[value]})</option>)}
+        </select></label>
+        <button type="button" disabled={busy || !eligible.length} onClick={() => setSelected(eligible)} className="text-brand disabled:opacity-40">{t("send_report.select_hard")}</button>
         <button type="button" disabled={busy || !selected.length} onClick={removeSelected} className="border border-danger text-danger rounded-lg px-3 py-2 disabled:opacity-40">{t("send_report.delete_selected", {count: selected.length})}</button>
       </div>
     </div>}
@@ -110,16 +124,17 @@ export function SendReport({ id, onUpdated }: {id: number; onUpdated?: () => voi
           <th className="text-left p-2">{t("send_report.reason")}</th>
         </tr></thead>
         <tbody>{visibleRows.length ? visibleRows.map(r => <tr key={r.id} className="border-t border-border">
-          <td className="p-2">{r.resend_id && (details.get(r.resend_id)?.hardBounce || details.get(r.resend_id)?.suppressed) && (details.get(r.resend_id)?.subscriberExists
+          <td className="p-2">{r.resend_id && (details.get(r.resend_id)?.bounced || details.get(r.resend_id)?.suppressed) && (details.get(r.resend_id)?.subscriberExists
             ? <input type="checkbox" aria-label={t("send_report.select_email", {email:r.email})} disabled={busy} checked={selected.includes(r.email.toLowerCase())} onChange={e => setSelected(previous => e.target.checked ? [...new Set([...previous, r.email.toLowerCase()])].slice(0, 1000) : previous.filter(email => email !== r.email.toLowerCase()))} />
             : <span>{t("send_report.already_deleted")}</span>)}</td>
           <td className="p-2">{r.email}</td>
           <td className="p-2 whitespace-nowrap">{t(`send_report.state.${r.state}`)}</td>
-          <td className="p-2 whitespace-nowrap">{r.resend_id && details.get(r.resend_id)?.hardBounce ? t("send_report.hard_bounce") : r.resend_id && events.get(r.resend_id)
+          <td className="p-2 whitespace-nowrap">{r.resend_id && details.get(r.resend_id)?.hardBounce ? t("send_report.hard_bounce") : r.resend_id && details.get(r.resend_id)?.softBounce ? t("send_report.filter.soft_bounce") : r.resend_id && events.get(r.resend_id)
             ? t(eventLabels[events.get(r.resend_id)!] ?? "send_report.no_event") : t("send_report.no_event")}</td>
           <td className="p-2 break-words">{r.error || (r.resend_id && details.get(r.resend_id)?.bounceReason) || "—"}</td>
-        </tr>) : <tr><td colSpan={5} className="p-4 text-text-secondary">{t(hardOnly ? "send_report.no_hard" : rows.length ? "send_report.hidden" : "send_report.empty")}</td></tr>}</tbody>
+        </tr>) : <tr><td colSpan={5} className="p-4 text-text-secondary">{t("send_report.empty")}</td></tr>}</tbody>
       </table>
     </div>}
+    {report && <Pagination total={report.pagination.total} page={report.pagination.page} pageSize={pageSize} onPageChange={value => {setPage(value); setSelected([]);}} onPageSizeChange={value => {setPageSize(value); setPage(1); setSelected([]);}} />}
   </section>;
 }

@@ -1,3 +1,4 @@
+import { pageInfo, type PageRequest } from "./server-pagination";
 import Database from "better-sqlite3";
 import path from "path";
 import type { Subscriber, SendLog, Group, Draft, SavedImage } from "./types";
@@ -251,6 +252,10 @@ function attachGroups(rows: RawSubscriberRow[]): Subscriber[] {
 }
 
 export function getSubscribers(search?: string, groupId?: number): Subscriber[] {
+  return querySubscribers(search, groupId).items;
+}
+
+export function querySubscribers(search?: string, groupId?: number, paging?: PageRequest) {
   const db = getDb();
   let sql = `
     SELECT s.id, s.email, s.name, s.created_at, s.status
@@ -261,8 +266,8 @@ export function getSubscribers(search?: string, groupId?: number): Subscriber[] 
   const params: (string | number)[] = [];
 
   if (search) {
-    sql += " AND (s.email LIKE ? OR s.name LIKE ?)";
-    params.push(`%${search}%`, `%${search}%`);
+    sql += " AND (instr(lower(s.email), ?) > 0 OR instr(lower(COALESCE(s.name, '')), ?) > 0)";
+    params.push(search.trim().toLowerCase(), search.trim().toLowerCase());
   }
   if (groupId !== undefined) {
     if (groupId === 0) {
@@ -273,9 +278,12 @@ export function getSubscribers(search?: string, groupId?: number): Subscriber[] 
     }
   }
 
-  sql += " ORDER BY s.created_at DESC";
+  const total = (db.prepare(`SELECT COUNT(*) as total FROM (${sql})`).get(...params) as {total:number}).total;
+  const info = pageInfo(total, paging ?? {page:1, pageSize:Math.max(1,total)});
+  sql += " ORDER BY s.created_at DESC, s.id DESC";
+  if (paging) { sql += " LIMIT ? OFFSET ?"; params.push(info.pageSize, info.offset); }
   const rows = db.prepare(sql).all(...params) as RawSubscriberRow[];
-  return attachGroups(rows);
+  return {...info, items: attachGroups(rows)};
 }
 
 export function getSubscriberCount(): number {
@@ -747,6 +755,14 @@ export function copySendToDraft(id: number): Draft | undefined {
   })();
 }
 
+export function getHistoryPage(paging: PageRequest) {
+  const connection = getDb();
+  const total = (connection.prepare("SELECT COUNT(*) as total FROM send_log").get() as {total:number}).total;
+  const info = pageInfo(total, paging);
+  const items = connection.prepare("SELECT * FROM send_log ORDER BY sent_at DESC, id DESC LIMIT ? OFFSET ?").all(info.pageSize, info.offset) as SendLog[];
+  return {...info, items};
+}
+
 export function getSendLogs(): SendLog[] {
   const db = getDb();
   return db
@@ -805,7 +821,7 @@ export interface SendLogStats {
 // for a campaign — this happens when Resend's batch response shape changes
 // and IDs aren't saved. Even without webhook events, the user should see
 // how many emails left.
-export function getSendLogStats(): SendLogStats[] {
+export function getSendLogStats(paging?: PageRequest): SendLogStats[] {
   const db = getDb();
   return db.prepare(`
     SELECT
@@ -845,8 +861,9 @@ export function getSendLogStats(): SendLogStats[] {
     FROM send_log sl
     LEFT JOIN sent_emails se ON se.send_log_id = sl.id
     GROUP BY sl.id
-    ORDER BY sl.sent_at DESC
-  `).all() as SendLogStats[];
+    ORDER BY sl.sent_at DESC, sl.id DESC
+    ${paging ? "LIMIT ? OFFSET ?" : ""}
+  `).all(...(paging ? [paging.pageSize, (paging.page - 1) * paging.pageSize] : [])) as SendLogStats[];
 }
 
 export function getOverallStats(): {

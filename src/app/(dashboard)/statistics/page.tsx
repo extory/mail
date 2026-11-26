@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useLocale } from "@/components/locale-provider";
-import { Pagination, paginate, type PageSize } from "@/components/pagination";
+import { Pagination, type PageSize } from "@/components/pagination";
 
 interface Overall {
   total_sent: number;
@@ -39,18 +39,20 @@ export default function StatisticsPage() {
   const [overall, setOverall] = useState<Overall | null>(null);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [loading, setLoading] = useState(true);
+  const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<PageSize>(30);
 
+  const [error, setError] = useState(false);
   useEffect(() => {
-    fetch("/api/statistics")
-      .then((r) => r.json())
-      .then((d) => {
-        setOverall(d.overall);
-        setCampaigns(d.campaigns);
-        setLoading(false);
-      });
-  }, []);
+    const controller = new AbortController();
+    fetch(`/api/statistics?page=${page}&pageSize=${pageSize}`, {signal:controller.signal})
+      .then(r => {if (!r.ok) throw new Error(); return r.json();})
+      .then(d => {setError(false); setOverall(d.overall); setCampaigns(d.campaigns); setTotal(d.total); setPage(d.page); setLoading(false);})
+      .catch(() => {if (!controller.signal.aborted) {setError(true); setLoading(false);}});
+    return () => controller.abort();
+  }, [page, pageSize]);
+  if (error) return <p role="alert">{t("send_report.error")}</p>;
 
   if (loading) return <p className="text-text-muted text-[13px]">{t("loading")}</p>;
 
@@ -146,7 +148,7 @@ export default function StatisticsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {paginate(campaigns, page, pageSize).map((c) => (
+                  {campaigns.map((c) => (
                     <tr key={c.send_log_id} className="border-b border-border-light last:border-0 hover:bg-surface/50 transition-colors">
                       <td className="px-4 py-3 text-text-primary max-w-[200px] truncate">{c.subject}</td>
                       <td className="px-4 py-3 text-text-muted whitespace-nowrap">{new Date(c.sent_at).toLocaleDateString()}</td>
@@ -178,11 +180,11 @@ export default function StatisticsPage() {
           </div>
 
           <Pagination
-            total={campaigns.length}
+            total={total}
             page={page}
             pageSize={pageSize}
-            onPageChange={setPage}
-            onPageSizeChange={(s) => { setPageSize(s); setPage(1); }}
+            onPageChange={value => {if (value !== page) {setLoading(true); setPage(value);}}}
+            onPageSizeChange={(s) => { setLoading(true); setPageSize(s); setPage(1); }}
           />
         </>
       )}

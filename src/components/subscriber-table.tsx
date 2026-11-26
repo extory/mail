@@ -1,10 +1,10 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { filterSubscribers, selectedVisibleIds } from "@/lib/subscriber-selection";
+import { selectedVisibleIds } from "@/lib/subscriber-selection";
 import type { Subscriber, Group } from "@/lib/types";
 import { useLocale } from "./locale-provider";
-import { Pagination, paginate, type PageSize } from "./pagination";
+import { Pagination, type PageSize } from "./pagination";
 
 interface SkippedRow {
   email: string;
@@ -38,12 +38,13 @@ export function SubscriberTable({ refreshKey = 0 }: { refreshKey?: number }) {
   const [openGroupPickerForId, setOpenGroupPickerForId] = useState<number | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<PageSize>(30);
   const fileRef = useRef<HTMLInputElement>(null);
   const groupPickerRef = useRef<HTMLDivElement>(null);
 
-  const subscribers = filterSubscribers(allSubscribers, search, filterGroupId);
+  const subscribers = allSubscribers;
   const visibleSelected = selectedVisibleIds(subscribers, selectedIds);
   const [listError, setListError] = useState<"load" | "delete" | null>(null);
   const bulkDeletingRef = useRef(false);
@@ -59,19 +60,23 @@ export function SubscriberTable({ refreshKey = 0 }: { refreshKey?: number }) {
     setLoading(true);
     setListError(null);
     try {
-      const res = await fetch("/api/subscribers");
+      const params = new URLSearchParams({page:String(page), pageSize:String(pageSize), search});
+      if (filterGroupId) params.set("groupId", filterGroupId);
+      const res = await fetch(`/api/subscribers?${params}`);
       if (!res.ok) throw new Error("Failed to load subscribers");
-      const data: Subscriber[] = await res.json();
+      const result = await res.json();
+      const data: Subscriber[] = result.items;
       if (requestId !== listRequest.current) return;
       setSubscribers(data);
       setSelectedIds(prev => new Set(selectedVisibleIds(data, prev)));
-      setPage(1);
+      setTotal(result.total);
+      setPage(result.page);
     } catch {
       if (requestId === listRequest.current) setListError("load");
     } finally {
       if (requestId === listRequest.current) setLoading(false);
     }
-  }, []);
+  }, [page, pageSize, search, filterGroupId]);
 
   useEffect(() => { fetchGroups(); }, []);
   useEffect(() => { void fetchSubscribers(); }, [fetchSubscribers, refreshKey]);
@@ -536,7 +541,7 @@ export function SubscriberTable({ refreshKey = 0 }: { refreshKey?: number }) {
         </select>
       </div>
 
-      <p role="status" className="text-[12px] text-text-secondary">{t("subscribers.search_count", { count: subscribers.length })} · {t("subscribers.search_selection_hint")}</p>
+      <p role="status" className="text-[12px] text-text-secondary">{t("subscribers.search_count", { count: total })} · {t("subscribers.search_selection_hint")}</p>
       {listError && <p role="alert" className="text-danger text-[13px]">{t(listError === "load" ? "subscribers.load_error" : "subscribers.delete_error")}</p>}
       {/* Bulk actions bar */}
       {visibleSelected.length > 0 && (
@@ -598,7 +603,7 @@ export function SubscriberTable({ refreshKey = 0 }: { refreshKey?: number }) {
                 <td colSpan={6} className="text-center py-12 text-text-muted text-[13px]">{t("subscribers.no_subscribers")}</td>
               </tr>
             ) : (
-              paginate(subscribers, page, pageSize).map((sub) => (
+              subscribers.map((sub) => (
                 <tr key={sub.id} className={`border-b border-border-light last:border-0 hover:bg-surface/50 transition-colors ${selectedIds.has(sub.id) ? "bg-brand/[0.04]" : ""}`}>
                   <td className="px-5 py-3">
                     <input
@@ -684,11 +689,11 @@ export function SubscriberTable({ refreshKey = 0 }: { refreshKey?: number }) {
       </div>
 
       <Pagination
-        total={subscribers.length}
+        total={total}
         page={page}
         pageSize={pageSize}
-        onPageChange={setPage}
-        onPageSizeChange={(s) => { setPageSize(s); setPage(1); }}
+        onPageChange={value => {setSelectedIds(new Set()); setPage(value);}}
+        onPageSizeChange={(s) => { setSelectedIds(new Set()); setPageSize(s); setPage(1); }}
       />
     </div>
   );

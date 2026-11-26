@@ -102,9 +102,3 @@ export function Pagination({ total, page, pageSize, onPageChange, onPageSizeChan
     </div>
   );
 }
-
-// Helper hook-like utility: slice array based on page state
-export function paginate<T>(items: T[], page: number, pageSize: PageSize): T[] {
-  const start = (page - 1) * pageSize;
-  return items.slice(start, start + pageSize);
-}

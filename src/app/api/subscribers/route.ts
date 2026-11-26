@@ -1,5 +1,6 @@
+import { readPage } from "@/lib/server-pagination";
 import { NextRequest } from "next/server";
-import { getSubscribers, addSubscriber, updateSubscriberGroups, isEmailSuppressed, getUnsubscribedEmails } from "@/lib/db";
+import { getSubscribers, querySubscribers, addSubscriber, updateSubscriberGroups, isEmailSuppressed, getUnsubscribedEmails } from "@/lib/db";
 import { isValidEmail, sanitizeString } from "@/lib/validation";
 
 export async function GET(request: NextRequest) {
@@ -7,6 +8,7 @@ export async function GET(request: NextRequest) {
   const search = request.nextUrl.searchParams.get("search") || undefined;
   const groupParam = request.nextUrl.searchParams.get("groupId");
   const groupId = groupParam !== null ? Number(groupParam) : undefined;
+  if (request.nextUrl.searchParams.has("page")) return Response.json(querySubscribers(search, groupId, readPage(request.nextUrl.searchParams)));
   const subscribers = getSubscribers(search, groupId);
   return Response.json(subscribers);
 }

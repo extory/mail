@@ -8,7 +8,9 @@ const ts = require('typescript');
 const React = require('react');
 const { renderToStaticMarkup } = require('react-dom/server');
 const filename = path.resolve(__dirname, '../src/components/send-report.tsx');
-function render(report, showAccepted) {
+function render(report) {
+  report = {...report, pagination:{total:report.accepted.length,page:1,pageSize:30}, counts:{}};
+  if (!report.tracked) report.recipients = report.accepted.map((r,i)=>({id:i,email:r.recipient_email,resend_id:r.resend_id,state:'accepted',error:null}));
   let stateIndex = 0;
   const component = new Module(filename, module);
   component.filename = filename;
@@ -16,9 +18,9 @@ function render(report, showAccepted) {
   const originalRequire = component.require.bind(component);
   component.require = id => id === 'react' ? {
     ...React,
-    useState: initial => [stateIndex++ === 0 ? report : stateIndex === 7 && showAccepted !== undefined ? showAccepted : initial, () => {}],
-    useEffect: () => {}, useCallback: fn => fn,
-  } : id === './locale-provider' ? { useLocale: () => ({ t: key => key }) } : originalRequire(id);
+    useState: initial => [stateIndex++ === 0 ? report : initial, () => {}],
+    useEffect: () => {}, useCallback: fn => fn, useRef: value => ({current:value}),
+  } : id === './pagination' ? {Pagination:()=>null} : id === '@/lib/report-filters' ? {REPORT_FILTERS:['all','unreached','bounced','hard_bounce','soft_bounce','suppressed']} : id === './locale-provider' ? { useLocale: () => ({ t: key => key }) } : originalRequire(id);
   component._compile(ts.transpileModule(fs.readFileSync(filename, 'utf8'), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true },
   }).outputText, filename);
@@ -38,16 +40,14 @@ test('legacy sends show saved recipients and results without collapsed details',
   assert.match(html, /send_report.event.delivered/);
   assert.doesNotMatch(html, /<details/);
 });
-test('empty and filtered lists explain why there are no rows', () => {
+test('empty server result explains why there are no rows', () => {
   assert.match(render({ ...base, recipients: [], accepted: [] }), /send_report.empty/);
-  const hidden = render(base, false);
-  assert.match(hidden, /send_report.hidden/);
-  assert.doesNotMatch(hidden, /reader@company.co/);
+  assert.match(render(base),/send_report.filter.unreached/);
 });
 
 test('hard-bounce rows show manual selection and provider reasons for legacy and tracked reports', () => {
   for (const tracked of [true,false]) {
-    const report = {...base, tracked, accepted:[{...accepted,last_event:'bounced',hardBounce:true,subscriberExists:true,bounceReason:'Mailbox does not exist'}]};
+    const report = {...base, tracked, accepted:[{...accepted,last_event:'bounced',hardBounce:true,bounced:true,subscriberExists:true,bounceReason:'Mailbox does not exist'}]};
     const html = render(report);
     assert.match(html,/send_report.hard_bounce/);
     assert.match(html,/send_report.select_email/);
@@ -67,5 +67,14 @@ test('suppressed recipients can be selected in legacy and tracked reports', () =
     const deleted = render({...report,accepted:report.accepted.map(r=>({...r,subscriberExists:false}))});
     assert.match(deleted,/send_report.already_deleted/);
     assert.doesNotMatch(deleted,/send_report.select_email/);
+  }
+});
+
+test('soft and unclassified bounces expose manual selection and distinct soft-bounce labels', () => {
+  for (const softBounce of [false,true]) {
+    const report = {...base,accepted:[{...accepted,last_event:'bounced',bounced:true,softBounce,subscriberExists:true}]};
+    const html = render(report);
+    assert.match(html,/send_report.select_email/);
+    assert.match(html,softBounce ? /send_report.filter.soft_bounce/ : /send_report.event.bounced/);
   }
 });

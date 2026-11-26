@@ -1,3 +1,5 @@
+import { pageInfo, type PageRequest } from "./server-pagination";
+import { REPORT_FILTERS, type ReportFilter } from "./report-filters";
 import { randomUUID } from "node:crypto";
 import { deleteSubscribers, getDb, saveSentEmail, suppressedEmailSql } from "./db";
 import type { SendLog } from "./types";
@@ -51,18 +53,20 @@ export function getSendReport(id: number) {
   const bounceEvents = connection.prepare(`SELECT ev.resend_id, ev.data FROM email_events ev
     JOIN sent_emails se ON se.resend_id = ev.resend_id
     WHERE se.send_log_id = ? AND ev.event_type = 'bounced' ORDER BY ev.id`).all(id) as {resend_id: string; data: string | null}[];
-  const bounces = new Map<string, {hard: boolean; reason: string | null}>();
+  const bounces = new Map<string, {hard: boolean; soft: boolean; reason: string | null}>();
   for (const event of bounceEvents) {
-    let hard = false, reason: string | null = null;
+    let hard = false, soft = false, reason: string | null = null;
     try {
       const detail = JSON.parse(event.data || "null");
       hard = detail?.type === "Permanent";
+      soft = detail?.type === "Transient";
       reason = typeof detail?.message === "string" ? detail.message : null;
     } catch { /* Older records may not have provider details. Never infer hard bounce. */ }
-    bounces.set(event.resend_id, {hard, reason});
+    bounces.set(event.resend_id, {hard, soft, reason});
   }
   const subscribers = new Set((connection.prepare("SELECT email FROM subscribers").all() as {email: string}[]).map(r => r.email.toLowerCase()));
   const accepted = sent.map(r => ({...r, suppressed: !!r.suppressed, last_event: r.suppressed ? "suppressed" : r.last_event, hardBounce: bounces.get(r.resend_id)?.hard ?? false,
+    bounced: bounces.has(r.resend_id) || r.last_event === "bounced", softBounce: bounces.get(r.resend_id)?.soft ?? false,
     bounceReason: bounces.get(r.resend_id)?.reason ?? null, subscriberExists: subscribers.has(r.recipient_email.toLowerCase())}));
   const count = (state: RecipientState) => recipients.filter(r => r.state === state).length;
   const active = new Set((connection.prepare("SELECT email FROM subscribers WHERE status = 'active'").all() as {email: string}[]).map(r => r.email.toLowerCase()));
@@ -73,14 +77,42 @@ export function getSendReport(id: number) {
     unknown: count("unknown") + count("sending"), pending: count("pending"), skipped: count("skipped"), retryable };
 }
 
-// Remove only explicitly selected, server-verified hard-bounce or suppressed subscriber records.
+export function getSendReportPage(id: number, paging: PageRequest, filter: ReportFilter = "all") {
+  const report = getSendReport(id);
+  if (!report) return null;
+  const details = new Map(report.accepted.map(r => [r.resend_id, r]));
+  const rows = report.tracked ? report.recipients : report.accepted.map((r, index) => ({
+    id: index, email: r.recipient_email, name:null, send_log_id:id, state:"accepted" as const, error:null, resend_id:r.resend_id,
+  }));
+  const matches = (r: typeof rows[number], value: ReportFilter) => {
+    const detail = r.resend_id ? details.get(r.resend_id) : undefined;
+    const event = detail?.last_event;
+    if (value === "all") return true;
+    if (value === "hard_bounce") return !!detail?.hardBounce;
+    if (value === "soft_bounce") return !!detail?.softBounce;
+    if (value === "bounced") return !!detail?.bounced;
+    if (value === "suppressed") return !!detail?.suppressed;
+    if (value === "unreached") return !!(detail?.bounced || detail?.suppressed ||
+      ['failed','delivery_delayed'].includes(event || '') || r.state !== 'accepted' || !event || event === 'sent');
+    if (value === "unknown") return r.state === 'unknown' || r.state === 'sending';
+    return r.state === value || event === value;
+  };
+  const counts = Object.fromEntries(REPORT_FILTERS.map(value => [value, rows.filter(r => matches(r,value)).length])) as Record<ReportFilter,number>;
+  const matching = rows.filter(r => matches(r, filter));
+  const pagination = pageInfo(matching.length, paging);
+  const recipients = matching.slice(pagination.offset, pagination.offset + pagination.pageSize);
+  const ids = new Set(recipients.map(r => r.resend_id));
+  return {...report, recipients, accepted:report.accepted.filter(r => ids.has(r.resend_id)), pagination, filter, counts};
+}
+
+// Remove only explicitly selected, server-verified bounced or suppressed subscriber records.
 // Keep delivery history and statistics intact, including for legacy campaigns.
 export function deleteHardBouncedSubscribers(id: number, emails: string[]): number {
   const connection = db();
   return connection.transaction(() => {
     const report = getSendReport(id);
     if (!report) throw new Error("not_found");
-    const eligible = new Set(report.accepted.filter(r => r.hardBounce || r.suppressed).map(r => r.recipient_email.toLowerCase()));
+    const eligible = new Set(report.accepted.filter(r => r.bounced || r.suppressed).map(r => r.recipient_email.toLowerCase()));
     const unique = [...new Set(emails.map(email => email.trim().toLowerCase()))];
     if (unique.some(email => !eligible.has(email))) throw new Error("not_hard_bounced");
     let deleted = 0;

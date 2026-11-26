@@ -5,7 +5,7 @@ import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import type { SendLog } from "@/lib/types";
 import { useLocale } from "./locale-provider";
-import { Pagination, paginate, type PageSize } from "./pagination";
+import { Pagination, type PageSize } from "./pagination";
 
 export function HistoryTable() {
   const { t } = useLocale();
@@ -16,14 +16,20 @@ export function HistoryTable() {
   const [previewId, setPreviewId] = useState<number | null>(null);
   const [copyError, setCopyError] = useState(false);
   const [restoringId, setRestoringId] = useState<number | null>(null);
+  const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<PageSize>(30);
 
+  const [refresh, setRefresh] = useState(0);
   useEffect(() => {
-    fetch("/api/history")
-      .then((res) => res.json())
-      .then((data) => { setLogs(data); setLoading(false); });
-  }, []);
+    const controller = new AbortController();
+    setLoading(true);
+    fetch(`/api/history?page=${page}&pageSize=${pageSize}`, {signal:controller.signal})
+      .then(res => { if (!res.ok) throw new Error(); return res.json(); })
+      .then(data => { setLogs(data.items); setTotal(data.total); setPage(data.page); setLoading(false); })
+      .catch(() => { if (!controller.signal.aborted) {setCopyError(true); setLoading(false);} });
+    return () => controller.abort();
+  }, [page, pageSize, refresh]);
 
   const reportRef = useRef<HTMLDivElement>(null);
   const previewRef = useRef<HTMLDivElement>(null);
@@ -48,7 +54,7 @@ export function HistoryTable() {
   };
 
   const previewLog = logs.find((l) => l.id === previewId);
-  const pageLogs = paginate(logs, page, pageSize);
+  const pageLogs = logs;
 
   return (
     <div className="space-y-5">
@@ -123,9 +129,9 @@ export function HistoryTable() {
         </table>
       </div>
 
-      {reportId !== null && <div ref={reportRef} tabIndex={-1} className="scroll-mt-6" aria-label={t("send_report.title")}><SendReport key={reportId} id={reportId} onUpdated={() => { fetch("/api/history").then(res => res.json()).then(setLogs); }} /></div>}
+      {reportId !== null && <div ref={reportRef} tabIndex={-1} className="scroll-mt-6" aria-label={t("send_report.title")}><SendReport key={reportId} id={reportId} onUpdated={() => setRefresh(value => value + 1)} /></div>}
       <Pagination
-        total={logs.length}
+        total={total}
         page={page}
         pageSize={pageSize}
         onPageChange={setPage}

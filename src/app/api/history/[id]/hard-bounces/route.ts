@@ -13,7 +13,7 @@ export async function DELETE(request: Request, { params }: {params: Promise<{id:
     return Response.json({deleted: deleteHardBouncedSubscribers(Number(id), body.emails)});
   } catch (error) {
     if (error instanceof Error && error.message === "not_found") return Response.json({error: "Not found"}, {status: 404});
-    if (error instanceof Error && error.message === "not_hard_bounced") return Response.json({error: "Only confirmed hard-bounce or suppressed recipients can be deleted"}, {status: 400});
+    if (error instanceof Error && error.message === "not_hard_bounced") return Response.json({error: "Only bounced or suppressed recipients can be deleted"}, {status: 400});
     return Response.json({error: "Could not delete subscribers"}, {status: 500});
   }
 }
