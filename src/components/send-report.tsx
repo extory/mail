@@ -9,7 +9,7 @@ const eventLabels: Record<string, TranslationKey> = {
   sent: "send_report.event.sent", delivered: "send_report.event.delivered",
   delivery_delayed: "send_report.event.delivery_delayed", bounced: "send_report.event.bounced",
   complained: "send_report.event.complained", opened: "send_report.event.opened",
-  clicked: "send_report.event.clicked", failed: "send_report.event.failed",
+  suppressed: "send_report.event.suppressed", clicked: "send_report.event.clicked", failed: "send_report.event.failed",
 };
 
 type Report = NonNullable<ReturnType<typeof getSendReport>>;
@@ -60,12 +60,12 @@ export function SendReport({ id, onUpdated }: {id: number; onUpdated?: () => voi
     finally { setBusy(false); }
   };
   const details = new Map(report?.accepted.map(r => [r.resend_id, r]));
-  const eligible = [...new Set(report?.accepted.filter(r => r.hardBounce && r.subscriberExists).map(r => r.recipient_email.toLowerCase()))];
+  const eligible = [...new Set(report?.accepted.filter(r => (r.hardBounce || r.suppressed) && r.subscriberExists).map(r => r.recipient_email.toLowerCase()))];
   const events = new Map(report?.accepted.map(r => [r.resend_id, r.last_event]));
   const rows = report?.tracked ? report.recipients : (report?.accepted.map(r => ({
     id: r.resend_id, email: r.recipient_email, state: "accepted" as const, error: null, resend_id: r.resend_id,
   })) ?? []);
-  const visibleRows = rows.filter(r => hardOnly ? !!(r.resend_id && details.get(r.resend_id)?.hardBounce) : !report?.tracked || showAccepted || r.state !== "accepted");
+  const visibleRows = rows.filter(r => hardOnly ? !!(r.resend_id && (details.get(r.resend_id)?.hardBounce || details.get(r.resend_id)?.suppressed)) : !report?.tracked || showAccepted || r.state !== "accepted");
   return <section className="rounded-xl border border-border bg-surface-card p-4 space-y-3">
     <div className="flex flex-wrap justify-between gap-3">
       <h3 className="text-[14px] font-semibold">{t("send_report.title")} #{id}</h3>
@@ -110,7 +110,7 @@ export function SendReport({ id, onUpdated }: {id: number; onUpdated?: () => voi
           <th className="text-left p-2">{t("send_report.reason")}</th>
         </tr></thead>
         <tbody>{visibleRows.length ? visibleRows.map(r => <tr key={r.id} className="border-t border-border">
-          <td className="p-2">{r.resend_id && details.get(r.resend_id)?.hardBounce && (details.get(r.resend_id)?.subscriberExists
+          <td className="p-2">{r.resend_id && (details.get(r.resend_id)?.hardBounce || details.get(r.resend_id)?.suppressed) && (details.get(r.resend_id)?.subscriberExists
             ? <input type="checkbox" aria-label={t("send_report.select_email", {email:r.email})} disabled={busy} checked={selected.includes(r.email.toLowerCase())} onChange={e => setSelected(previous => e.target.checked ? [...new Set([...previous, r.email.toLowerCase()])].slice(0, 1000) : previous.filter(email => email !== r.email.toLowerCase()))} />
             : <span>{t("send_report.already_deleted")}</span>)}</td>
           <td className="p-2">{r.email}</td>

@@ -768,6 +768,18 @@ export function recordEmailEvent(resendId: string, eventType: string, data?: str
   db.prepare("UPDATE sent_emails SET last_event = ? WHERE resend_id = ?").run(eventType, resendId);
 }
 
+// Recognize both current events and explicit suppression markers in older imports/webhooks.
+// CASE protects JSON extraction from malformed legacy data. Alias is internal, never user input.
+export function suppressedEmailSql(alias: "se" | "sent_emails"): string {
+  return `(COALESCE(${alias}.last_event = 'suppressed', 0) OR EXISTS (
+    SELECT 1 FROM email_events ev WHERE ev.resend_id = ${alias}.resend_id AND (
+      ev.event_type = 'suppressed' OR (ev.event_type = 'failed' AND
+        CASE WHEN json_valid(ev.data) THEN
+          json_extract(ev.data, '$.reason') = 'suppressed' OR json_extract(ev.data, '$.provider_state') = 'suppressed'
+        ELSE 0 END)
+    )))`;
+}
+
 export interface SendLogStats {
   send_log_id: number;
   subject: string;
@@ -780,6 +792,7 @@ export interface SendLogStats {
   bounced: number;
   complained: number;
   failed: number;
+  suppressed: number;
 }
 
 // Email lifecycle is cumulative: sent → delivered → opened → clicked.
@@ -825,9 +838,10 @@ export function getSendLogStats(): SendLogStats[] {
           OR EXISTS (SELECT 1 FROM email_events ev WHERE ev.resend_id = se.resend_id AND ev.event_type = 'complained')
         THEN 1 ELSE 0 END), 0) as complained,
       COALESCE(SUM(CASE
-        WHEN se.last_event = 'failed'
-          OR EXISTS (SELECT 1 FROM email_events ev WHERE ev.resend_id = se.resend_id AND ev.event_type = 'failed')
-        THEN 1 ELSE 0 END), 0) as failed
+        WHEN NOT ${suppressedEmailSql('se')} AND (se.last_event = 'failed'
+          OR EXISTS (SELECT 1 FROM email_events ev WHERE ev.resend_id = se.resend_id AND ev.event_type = 'failed'))
+        THEN 1 ELSE 0 END), 0) as failed,
+      COALESCE(SUM(CASE WHEN ${suppressedEmailSql('se')} THEN 1 ELSE 0 END), 0) as suppressed
     FROM send_log sl
     LEFT JOIN sent_emails se ON se.send_log_id = sl.id
     GROUP BY sl.id
@@ -842,6 +856,7 @@ export function getOverallStats(): {
   total_clicked: number;
   total_bounced: number;
   total_failed: number;
+  total_suppressed: number;
 } {
   const db = getDb();
   const fromEvents = db.prepare(`
@@ -864,11 +879,12 @@ export function getOverallStats(): {
           OR EXISTS (SELECT 1 FROM email_events ev WHERE ev.resend_id = sent_emails.resend_id AND ev.event_type = 'bounced')
         THEN 1 ELSE 0 END) as total_bounced,
       SUM(CASE
-        WHEN last_event = 'failed'
-          OR EXISTS (SELECT 1 FROM email_events ev WHERE ev.resend_id = sent_emails.resend_id AND ev.event_type = 'failed')
-        THEN 1 ELSE 0 END) as total_failed
+        WHEN NOT ${suppressedEmailSql('sent_emails')} AND (last_event = 'failed'
+          OR EXISTS (SELECT 1 FROM email_events ev WHERE ev.resend_id = sent_emails.resend_id AND ev.event_type = 'failed'))
+        THEN 1 ELSE 0 END) as total_failed,
+      SUM(CASE WHEN ${suppressedEmailSql('sent_emails')} THEN 1 ELSE 0 END) as total_suppressed
     FROM sent_emails
-  `).get() as { total_sent: number; total_delivered: number; total_opened: number; total_clicked: number; total_bounced: number; total_failed: number };
+  `).get() as { total_sent: number; total_delivered: number; total_opened: number; total_clicked: number; total_bounced: number; total_failed: number; total_suppressed: number };
 
   // Fallback: when sent_emails is empty (e.g. ID save failed), fall back
   // to send_log.recipient_count totals so the user still sees how many
@@ -887,6 +903,7 @@ export function getOverallStats(): {
       total_clicked: 0,
       total_bounced: 0,
       total_failed: fromLogs.total_failed,
+      total_suppressed: 0,
     };
   }
   return fromEvents;
@@ -1011,34 +1028,7 @@ export function getDashboardData() {
     GROUP BY g.id ORDER BY count DESC LIMIT 5
   `).all() as { name: string; count: number }[];
 
-  let emailStats = db.prepare(`
-    SELECT
-      COALESCE(COUNT(*), 0) as total_sent,
-      COALESCE(SUM(CASE WHEN last_event IN ('delivered','opened','clicked') THEN 1 ELSE 0 END), 0) as total_delivered,
-      COALESCE(SUM(CASE WHEN last_event IN ('opened','clicked') THEN 1 ELSE 0 END), 0) as total_opened,
-      COALESCE(SUM(CASE WHEN last_event = 'clicked' THEN 1 ELSE 0 END), 0) as total_clicked,
-      COALESCE(SUM(CASE WHEN last_event = 'bounced' THEN 1 ELSE 0 END), 0) as total_bounced,
-      COALESCE(SUM(CASE WHEN last_event = 'failed' THEN 1 ELSE 0 END), 0) as total_failed
-    FROM sent_emails
-  `).get() as { total_sent: number; total_delivered: number; total_opened: number; total_clicked: number; total_bounced: number; total_failed: number };
-
-  if (!emailStats.total_sent || emailStats.total_sent === 0) {
-    // Fallback when sent_emails is empty
-    const fromLogs = db.prepare(`
-      SELECT
-        COALESCE(SUM(CASE WHEN status IN ('sent','partial') THEN recipient_count ELSE 0 END), 0) as total_sent,
-        COALESCE(SUM(CASE WHEN status = 'failed' THEN recipient_count ELSE 0 END), 0) as total_failed
-      FROM send_log
-    `).get() as { total_sent: number; total_failed: number };
-    emailStats = {
-      total_sent: fromLogs.total_sent,
-      total_delivered: 0,
-      total_opened: 0,
-      total_clicked: 0,
-      total_bounced: 0,
-      total_failed: fromLogs.total_failed,
-    };
-  }
+  const emailStats = getOverallStats();
 
   const recentCampaigns = db.prepare(`
     SELECT sl.subject, sl.sent_at, sl.recipient_count, sl.status

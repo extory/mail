@@ -11,6 +11,7 @@ interface Overall {
   total_clicked: number;
   total_bounced: number;
   total_failed: number;
+  total_suppressed: number;
 }
 
 interface Campaign {
@@ -25,6 +26,7 @@ interface Campaign {
   bounced: number;
   complained: number;
   failed: number;
+  suppressed: number;
 }
 
 function pct(n: number, total: number): string {
@@ -78,7 +80,7 @@ export default function StatisticsPage() {
         <>
           {/* Overall stats cards */}
           <h2 className="text-[15px] font-semibold text-text-primary mb-4">{t("stats.overall")}</h2>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-8">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-3 mb-8">
             <StatCard
               label={t("stats.total_sent")}
               value={overall.total_sent}
@@ -108,6 +110,7 @@ export default function StatisticsPage() {
               sub={pct(overall.total_bounced, overall.total_sent)}
               color="text-[#f59e0b]"
             />
+            <StatCard label={t("stats.suppressed")} value={overall.total_suppressed} sub={pct(overall.total_suppressed, overall.total_sent)} color="text-[#64748b]" />
             <StatCard
               label={t("stats.failed")}
               value={overall.total_failed}
@@ -138,6 +141,7 @@ export default function StatisticsPage() {
                     <th className="text-right px-4 py-3 font-medium text-text-secondary text-[12px]">{t("stats.opened")}</th>
                     <th className="text-right px-4 py-3 font-medium text-text-secondary text-[12px]">{t("stats.clicked")}</th>
                     <th className="text-right px-4 py-3 font-medium text-text-secondary text-[12px]">{t("stats.bounced")}</th>
+                    <th className="text-right px-4 py-3 font-medium text-text-secondary text-[12px]">{t("stats.suppressed")}</th>
                     <th className="text-right px-4 py-3 font-medium text-text-secondary text-[12px]">{t("stats.failed")}</th>
                   </tr>
                 </thead>
@@ -162,6 +166,7 @@ export default function StatisticsPage() {
                       <td className="px-4 py-3 text-right">
                         <span className="text-[#f59e0b]">{c.bounced}</span>
                       </td>
+                      <td className="px-4 py-3 text-right text-text-secondary">{c.suppressed}</td>
                       <td className="px-4 py-3 text-right">
                         <span className="text-[#ef4444]">{c.failed}</span>
                       </td>

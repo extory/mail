@@ -64,8 +64,8 @@ export async function POST(request: NextRequest) {
       "email.opened": "opened",
       "email.clicked": "clicked",
       "email.failed": "failed",
-      // Suppressed messages never reach the recipient and belong in failed totals.
-      "email.suppressed": "failed",
+      // Keep provider suppression separate from delivery failures.
+      "email.suppressed": "suppressed",
     };
 
     const eventType = eventMap[type];

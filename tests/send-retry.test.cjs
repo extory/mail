@@ -260,3 +260,41 @@ test('malformed and unknown bounce details never authorize subscriber deletion',
     assert.throws(()=>tracking.deleteHardBouncedSubscribers(log.id,[r.email]),/not_hard_bounced/);
   }
 });
+
+test('suppression statistics include old imports and webhooks without counting ordinary failures; manual removal preserves results', async () => {
+  const route = require('../src/app/api/history/[id]/hard-bounces/route.ts');
+  const recipients = seed(6, 'suppression-cleanup');
+  const log = newLog(recipients);
+  const events = [
+    ['suppressed', JSON.stringify({reason:'suppressed'})],
+    ['failed', JSON.stringify({source:'resend_csv_recovery',provider_state:'suppressed'})],
+    ['failed', JSON.stringify({reason:'suppressed',details:{reason:'Previously bounced'}})],
+    ['failed', JSON.stringify({message:'ordinary failure'})],
+    ['failed', 'invalid json'],
+    ['failed', JSON.stringify({message:'suppressed'})],
+  ];
+  recipients.forEach((r,i) => {
+    db.saveSentEmail(log.id, `suppressed-cleanup-${i}`, r.email);
+    db.recordEmailEvent(`suppressed-cleanup-${i}`, ...events[i]);
+  });
+  // Duplicate notifications still count each email only once.
+  db.recordEmailEvent('suppressed-cleanup-0', ...events[0]);
+  const before = db.getOverallStats();
+  const stats = db.getSendLogStats().find(r=>r.send_log_id===log.id);
+  assert.equal(stats.suppressed,3);
+  assert.equal(stats.failed,3);
+  assert.ok(before.total_suppressed >= 3);
+  assert.deepEqual(db.getDashboardData().emailStats, before);
+  const report = tracking.getSendReport(log.id);
+  assert.deepEqual(report.accepted.map(r=>r.suppressed), [true,true,true,false,false,false]);
+  assert.equal(report.accepted[1].last_event,'suppressed');
+  const remove = emails => route.DELETE(new Request('http://localhost', {method:'DELETE', body:JSON.stringify({confirmed:true, emails})}), {params:Promise.resolve({id:String(log.id)})});
+  assert.equal((await remove([recipients[0].email,recipients[3].email])).status,400);
+  assert.equal(tracking.getSendReport(log.id).accepted[0].subscriberExists,true);
+  const result = await remove(recipients.slice(0,3).map(r=>r.email));
+  assert.equal(result.status,200);
+  assert.deepEqual(await result.json(), {deleted:3});
+  assert.deepEqual(db.getOverallStats(),before);
+  assert.deepEqual(db.getSendLogStats().find(r=>r.send_log_id===log.id),stats);
+  assert.deepEqual(tracking.getSendReport(log.id).accepted.map(r=>r.subscriberExists),[false,false,false,true,true,true]);
+});

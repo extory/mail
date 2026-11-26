@@ -57,3 +57,15 @@ test('hard-bounce rows show manual selection and provider reasons for legacy and
     assert.doesNotMatch(deleted,/send_report.select_email/);
   }
 });
+
+test('suppressed recipients can be selected in legacy and tracked reports', () => {
+  for (const tracked of [true,false]) {
+    const report = {...base, tracked, accepted:[{...accepted,last_event:'suppressed',suppressed:true,hardBounce:false,subscriberExists:true}]};
+    const html = render(report);
+    assert.match(html,/send_report.event.suppressed/);
+    assert.match(html,/send_report.select_email/);
+    const deleted = render({...report,accepted:report.accepted.map(r=>({...r,subscriberExists:false}))});
+    assert.match(deleted,/send_report.already_deleted/);
+    assert.doesNotMatch(deleted,/send_report.select_email/);
+  }
+});

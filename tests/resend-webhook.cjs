@@ -28,7 +28,7 @@ const req=(text=body,headers={})=>new Request('https://mail.test/api/webhooks/re
  const suppressed=JSON.stringify({type:'email.suppressed',data:{email_id:'suppressed-test',suppressed:{reason:'Previously bounced'}}});
  const signed={...headers,'svix-signature':wh.sign('msg_test',now,suppressed)};
  assert.equal((await route.POST(req(suppressed,signed))).status,200);
- assert.equal(lastWrite[1],'failed');
+ assert.equal(lastWrite[1],'suppressed');
  assert.equal(JSON.parse(lastWrite[2]).reason,'suppressed');
  console.log('PASS: missing secret, missing signature, valid signature, tampered payload, streaming size limit. No real events written.');
 })().catch(e=>{console.error(e);process.exitCode=1});

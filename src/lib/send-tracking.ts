@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { deleteSubscribers, getDb, saveSentEmail } from "./db";
+import { deleteSubscribers, getDb, saveSentEmail, suppressedEmailSql } from "./db";
 import type { SendLog } from "./types";
 import { isValidEmail } from "./validation";
 
@@ -47,7 +47,7 @@ export function getSendReport(id: number) {
   if (!log) return null;
   const tracking = connection.prepare("SELECT * FROM send_tracking WHERE send_log_id = ?").get(id) as {embed_images: number; lock_until: number; lock_token: string | null} | undefined;
   const recipients = connection.prepare("SELECT * FROM send_recipients WHERE send_log_id = ? ORDER BY id").all(id) as TrackedRecipient[];
-  const sent = connection.prepare("SELECT recipient_email, resend_id, last_event FROM sent_emails WHERE send_log_id = ? ORDER BY id").all(id) as {recipient_email: string; resend_id: string; last_event: string | null}[];
+  const sent = connection.prepare(`SELECT recipient_email, resend_id, last_event, ${suppressedEmailSql('se')} as suppressed FROM sent_emails se WHERE send_log_id = ? ORDER BY id`).all(id) as {recipient_email: string; resend_id: string; last_event: string | null; suppressed: number}[];
   const bounceEvents = connection.prepare(`SELECT ev.resend_id, ev.data FROM email_events ev
     JOIN sent_emails se ON se.resend_id = ev.resend_id
     WHERE se.send_log_id = ? AND ev.event_type = 'bounced' ORDER BY ev.id`).all(id) as {resend_id: string; data: string | null}[];
@@ -62,7 +62,7 @@ export function getSendReport(id: number) {
     bounces.set(event.resend_id, {hard, reason});
   }
   const subscribers = new Set((connection.prepare("SELECT email FROM subscribers").all() as {email: string}[]).map(r => r.email.toLowerCase()));
-  const accepted = sent.map(r => ({...r, hardBounce: bounces.get(r.resend_id)?.hard ?? false,
+  const accepted = sent.map(r => ({...r, suppressed: !!r.suppressed, last_event: r.suppressed ? "suppressed" : r.last_event, hardBounce: bounces.get(r.resend_id)?.hard ?? false,
     bounceReason: bounces.get(r.resend_id)?.reason ?? null, subscriberExists: subscribers.has(r.recipient_email.toLowerCase())}));
   const count = (state: RecipientState) => recipients.filter(r => r.state === state).length;
   const active = new Set((connection.prepare("SELECT email FROM subscribers WHERE status = 'active'").all() as {email: string}[]).map(r => r.email.toLowerCase()));
@@ -73,14 +73,14 @@ export function getSendReport(id: number) {
     unknown: count("unknown") + count("sending"), pending: count("pending"), skipped: count("skipped"), retryable };
 }
 
-// Remove only explicitly selected, server-verified hard-bounce subscriber records.
+// Remove only explicitly selected, server-verified hard-bounce or suppressed subscriber records.
 // Keep delivery history and statistics intact, including for legacy campaigns.
 export function deleteHardBouncedSubscribers(id: number, emails: string[]): number {
   const connection = db();
   return connection.transaction(() => {
     const report = getSendReport(id);
     if (!report) throw new Error("not_found");
-    const eligible = new Set(report.accepted.filter(r => r.hardBounce).map(r => r.recipient_email.toLowerCase()));
+    const eligible = new Set(report.accepted.filter(r => r.hardBounce || r.suppressed).map(r => r.recipient_email.toLowerCase()));
     const unique = [...new Set(emails.map(email => email.trim().toLowerCase()))];
     if (unique.some(email => !eligible.has(email))) throw new Error("not_hard_bounced");
     let deleted = 0;
