@@ -217,3 +217,46 @@ test('report API includes saved delivery results for tracked and legacy sends wi
     assert.equal(report.retryable, 0);
   }
 });
+
+test('hard-bounce removal validates the campaign and preserves history and statistics', async () => {
+  const route = require('../src/app/api/history/[id]/hard-bounces/route.ts');
+  const group = db.addGroup('Hard bounce cleanup');
+  const recipients = ['hard', 'soft', 'unknown'].map(prefix => db.addSubscriber(`${prefix}-cleanup@real-company.co`, '', [group.id]));
+  const log = db.addSendLog('Cleanup', '<p>Cleanup</p>', 3, 'sent');
+  recipients.forEach((r, i) => {
+    db.saveSentEmail(log.id, `cleanup-${i}`, r.email);
+    db.recordEmailEvent(`cleanup-${i}`, 'bounced', i === 2 ? JSON.stringify({source:'resend_csv_recovery'}) : JSON.stringify({type:i === 0 ? 'Permanent' : 'Transient',message:'Provider reason'}));
+  });
+  const report = tracking.getSendReport(log.id);
+  assert.deepEqual(report.accepted.map(r => r.hardBounce), [true, false, false]);
+  assert.equal(report.accepted[0].bounceReason, 'Provider reason');
+  const request = body => new Request('http://localhost', {method:'DELETE',body:JSON.stringify(body)});
+  const context = id => ({params:Promise.resolve({id:String(id)})});
+  assert.equal((await route.DELETE(request({emails:[recipients[0].email]}),context(log.id))).status,400);
+  assert.equal((await route.DELETE(request({confirmed:true,emails:recipients.slice(0,2).map(r=>r.email)}),context(log.id))).status,400);
+  assert.ok(db.getDb().prepare('SELECT id FROM subscribers WHERE id=?').get(recipients[0].id));
+  const other = db.addSendLog('Other', 'x', 0, 'sent');
+  assert.equal((await route.DELETE(request({confirmed:true,emails:[recipients[0].email]}),context(other.id))).status,400);
+  const before = db.getSendLogStats().find(r=>r.send_log_id===log.id);
+  const response = await route.DELETE(request({confirmed:true,emails:[recipients[0].email.toUpperCase(),recipients[0].email]}),context(log.id));
+  assert.equal(response.status,200);
+  assert.deepEqual(await response.json(),{deleted:1});
+  assert.equal(db.getDb().prepare('SELECT id FROM subscribers WHERE id=?').get(recipients[0].id),undefined);
+  assert.equal(db.getDb().prepare('SELECT 1 FROM subscriber_groups WHERE subscriber_id=?').get(recipients[0].id),undefined);
+  assert.equal(tracking.getSendReport(log.id).accepted[0].subscriberExists,false);
+  assert.deepEqual(db.getSendLogStats().find(r=>r.send_log_id===log.id),before);
+  assert.deepEqual(await (await route.DELETE(request({confirmed:true,emails:[recipients[0].email]}),context(log.id))).json(),{deleted:0});
+  assert.equal((await route.DELETE(request({confirmed:true,emails:[recipients[0].email]}),context(999999))).status,404);
+  assert.equal((await route.DELETE(new Request('http://localhost',{method:'DELETE',body:'bad json'}),context(log.id))).status,400);
+});
+
+test('malformed and unknown bounce details never authorize subscriber deletion', () => {
+  const r = seed(1,'malformed-bounce')[0];
+  const log = db.addSendLog('Unknown bounce', 'x', 1, 'sent');
+  db.saveSentEmail(log.id,'malformed-bounce-id',r.email);
+  for (const data of ['not json', 'null', '{"type":"Undetermined"}', '{"message":"hard bounce"}']) {
+    db.recordEmailEvent('malformed-bounce-id','bounced',data);
+    assert.equal(tracking.getSendReport(log.id).accepted[0].hardBounce,false);
+    assert.throws(()=>tracking.deleteHardBouncedSubscribers(log.id,[r.email]),/not_hard_bounced/);
+  }
+});

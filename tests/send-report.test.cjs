@@ -44,3 +44,16 @@ test('empty and filtered lists explain why there are no rows', () => {
   assert.match(hidden, /send_report.hidden/);
   assert.doesNotMatch(hidden, /reader@company.co/);
 });
+
+test('hard-bounce rows show manual selection and provider reasons for legacy and tracked reports', () => {
+  for (const tracked of [true,false]) {
+    const report = {...base, tracked, accepted:[{...accepted,last_event:'bounced',hardBounce:true,subscriberExists:true,bounceReason:'Mailbox does not exist'}]};
+    const html = render(report);
+    assert.match(html,/send_report.hard_bounce/);
+    assert.match(html,/send_report.select_email/);
+    assert.match(html,/Mailbox does not exist/);
+    const deleted = render({...report,accepted:report.accepted.map(r=>({...r,subscriberExists:false}))});
+    assert.match(deleted,/send_report.already_deleted/);
+    assert.doesNotMatch(deleted,/send_report.select_email/);
+  }
+});

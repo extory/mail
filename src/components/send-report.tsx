@@ -22,11 +22,15 @@ export function SendReport({ id, onUpdated }: {id: number; onUpdated?: () => voi
   const [confirmed, setConfirmed] = useState(false);
   const [embedImages, setEmbedImages] = useState(false);
   const [showAccepted, setShowAccepted] = useState(true);
+  const [selected, setSelected] = useState<string[]>([]);
+  const [hardOnly, setHardOnly] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
   const load = useCallback(async () => {
     const res = await fetch(`/api/history/${id}`,{cache:"no-store"});
     if (!res.ok) throw new Error("Could not load send report");
     setReport(await res.json());
     setError(null);
+    setSelected([]);
   }, [id]);
   useEffect(() => { setReport(null); load().catch(() => setError(t("send_report.error"))); }, [load,t]);
   const act = async (action: "retry" | "recover") => {
@@ -42,11 +46,26 @@ export function SendReport({ id, onUpdated }: {id: number; onUpdated?: () => voi
     } catch (err) { setError(err instanceof Error ? err.message : t("send_report.error")); }
     finally { setBusy(false); }
   };
+  const removeSelected = async () => {
+    if (busy || !selected.length || !confirm(t("send_report.delete_confirm", {count: selected.length}))) return;
+    setBusy(true); setError(null); setNotice(null);
+    try {
+      const res = await fetch(`/api/history/${id}/hard-bounces`, {method: "DELETE", headers: {"Content-Type": "application/json"}, body: JSON.stringify({emails: selected, confirmed: true})});
+      const result = await res.json();
+      if (!res.ok) throw new Error(t("send_report.delete_error"));
+      await load();
+      setNotice(t("send_report.deleted", {count: result.deleted}));
+      onUpdated?.();
+    } catch { setError(t("send_report.delete_error")); }
+    finally { setBusy(false); }
+  };
+  const details = new Map(report?.accepted.map(r => [r.resend_id, r]));
+  const eligible = [...new Set(report?.accepted.filter(r => r.hardBounce && r.subscriberExists).map(r => r.recipient_email.toLowerCase()))];
   const events = new Map(report?.accepted.map(r => [r.resend_id, r.last_event]));
   const rows = report?.tracked ? report.recipients : (report?.accepted.map(r => ({
     id: r.resend_id, email: r.recipient_email, state: "accepted" as const, error: null, resend_id: r.resend_id,
   })) ?? []);
-  const visibleRows = rows.filter(r => !report?.tracked || showAccepted || r.state !== "accepted");
+  const visibleRows = rows.filter(r => hardOnly ? !!(r.resend_id && details.get(r.resend_id)?.hardBounce) : !report?.tracked || showAccepted || r.state !== "accepted");
   return <section className="rounded-xl border border-border bg-surface-card p-4 space-y-3">
     <div className="flex flex-wrap justify-between gap-3">
       <h3 className="text-[14px] font-semibold">{t("send_report.title")} #{id}</h3>
@@ -72,21 +91,34 @@ export function SendReport({ id, onUpdated }: {id: number; onUpdated?: () => voi
         <button type="button" disabled={busy || !confirmed || !originals.trim()} onClick={() => act("recover")} className="border border-border rounded-lg px-3 py-2 text-[12px] disabled:opacity-40">{t("send_report.recover")}</button>
       </div>}
     </>}
+    {notice && <p role="status" className="text-[12px]">{notice}</p>}
+    {report && <div className="space-y-2">
+      <p className="text-[12px] text-text-secondary">{t("send_report.hard_hint")}</p>
+      <div className="flex flex-wrap gap-3 items-center text-[12px]">
+        <label className="flex gap-2"><input type="checkbox" checked={hardOnly} onChange={e => {setHardOnly(e.target.checked); setSelected([]);}} />{t("send_report.hard_only")}</label>
+        <button type="button" disabled={busy || !eligible.length} onClick={() => {setHardOnly(true); setSelected(eligible.slice(0, 1000));}} className="text-brand disabled:opacity-40">{t("send_report.select_hard")}</button>
+        <button type="button" disabled={busy || !selected.length} onClick={removeSelected} className="border border-danger text-danger rounded-lg px-3 py-2 disabled:opacity-40">{t("send_report.delete_selected", {count: selected.length})}</button>
+      </div>
+    </div>}
     {report && <div className="max-h-80 overflow-auto">
       <table className="w-full text-[12px]">
         <thead><tr>
+          <th className="text-left p-2">{t("send_report.select")}</th>
           <th className="text-left p-2">{t("subscribers.email")}</th>
           <th className="text-left p-2">{t("history.status")}</th>
           <th className="text-left p-2">{t("send_report.delivery")}</th>
           <th className="text-left p-2">{t("send_report.reason")}</th>
         </tr></thead>
         <tbody>{visibleRows.length ? visibleRows.map(r => <tr key={r.id} className="border-t border-border">
+          <td className="p-2">{r.resend_id && details.get(r.resend_id)?.hardBounce && (details.get(r.resend_id)?.subscriberExists
+            ? <input type="checkbox" aria-label={t("send_report.select_email", {email:r.email})} disabled={busy} checked={selected.includes(r.email.toLowerCase())} onChange={e => setSelected(previous => e.target.checked ? [...new Set([...previous, r.email.toLowerCase()])].slice(0, 1000) : previous.filter(email => email !== r.email.toLowerCase()))} />
+            : <span>{t("send_report.already_deleted")}</span>)}</td>
           <td className="p-2">{r.email}</td>
           <td className="p-2 whitespace-nowrap">{t(`send_report.state.${r.state}`)}</td>
-          <td className="p-2 whitespace-nowrap">{r.resend_id && events.get(r.resend_id)
+          <td className="p-2 whitespace-nowrap">{r.resend_id && details.get(r.resend_id)?.hardBounce ? t("send_report.hard_bounce") : r.resend_id && events.get(r.resend_id)
             ? t(eventLabels[events.get(r.resend_id)!] ?? "send_report.no_event") : t("send_report.no_event")}</td>
-          <td className="p-2 break-words">{r.error || "—"}</td>
-        </tr>) : <tr><td colSpan={4} className="p-4 text-text-secondary">{t(rows.length ? "send_report.hidden" : "send_report.empty")}</td></tr>}</tbody>
+          <td className="p-2 break-words">{r.error || (r.resend_id && details.get(r.resend_id)?.bounceReason) || "—"}</td>
+        </tr>) : <tr><td colSpan={5} className="p-4 text-text-secondary">{t(hardOnly ? "send_report.no_hard" : rows.length ? "send_report.hidden" : "send_report.empty")}</td></tr>}</tbody>
       </table>
     </div>}
   </section>;

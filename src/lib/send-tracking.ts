@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { getDb, saveSentEmail } from "./db";
+import { deleteSubscribers, getDb, saveSentEmail } from "./db";
 import type { SendLog } from "./types";
 import { isValidEmail } from "./validation";
 
@@ -47,7 +47,23 @@ export function getSendReport(id: number) {
   if (!log) return null;
   const tracking = connection.prepare("SELECT * FROM send_tracking WHERE send_log_id = ?").get(id) as {embed_images: number; lock_until: number; lock_token: string | null} | undefined;
   const recipients = connection.prepare("SELECT * FROM send_recipients WHERE send_log_id = ? ORDER BY id").all(id) as TrackedRecipient[];
-  const accepted = connection.prepare("SELECT recipient_email, resend_id, last_event FROM sent_emails WHERE send_log_id = ? ORDER BY id").all(id) as {recipient_email: string; resend_id: string; last_event: string | null}[];
+  const sent = connection.prepare("SELECT recipient_email, resend_id, last_event FROM sent_emails WHERE send_log_id = ? ORDER BY id").all(id) as {recipient_email: string; resend_id: string; last_event: string | null}[];
+  const bounceEvents = connection.prepare(`SELECT ev.resend_id, ev.data FROM email_events ev
+    JOIN sent_emails se ON se.resend_id = ev.resend_id
+    WHERE se.send_log_id = ? AND ev.event_type = 'bounced' ORDER BY ev.id`).all(id) as {resend_id: string; data: string | null}[];
+  const bounces = new Map<string, {hard: boolean; reason: string | null}>();
+  for (const event of bounceEvents) {
+    let hard = false, reason: string | null = null;
+    try {
+      const detail = JSON.parse(event.data || "null");
+      hard = detail?.type === "Permanent";
+      reason = typeof detail?.message === "string" ? detail.message : null;
+    } catch { /* Older records may not have provider details. Never infer hard bounce. */ }
+    bounces.set(event.resend_id, {hard, reason});
+  }
+  const subscribers = new Set((connection.prepare("SELECT email FROM subscribers").all() as {email: string}[]).map(r => r.email.toLowerCase()));
+  const accepted = sent.map(r => ({...r, hardBounce: bounces.get(r.resend_id)?.hard ?? false,
+    bounceReason: bounces.get(r.resend_id)?.reason ?? null, subscriberExists: subscribers.has(r.recipient_email.toLowerCase())}));
   const count = (state: RecipientState) => recipients.filter(r => r.state === state).length;
   const active = new Set((connection.prepare("SELECT email FROM subscribers WHERE status = 'active'").all() as {email: string}[]).map(r => r.email.toLowerCase()));
   const retryable = recipients.filter(r => ["pending", "failed"].includes(r.state) && active.has(r.email.toLowerCase()) && !recipientProblem(r.email)).length;
@@ -55,6 +71,25 @@ export function getSendReport(id: number) {
     busy: !!tracking?.lock_token && tracking.lock_until > Date.now(), recipients, accepted,
     total: recipients.length, success: count("accepted"), failed: count("failed"), blocked: count("blocked"),
     unknown: count("unknown") + count("sending"), pending: count("pending"), skipped: count("skipped"), retryable };
+}
+
+// Remove only explicitly selected, server-verified hard-bounce subscriber records.
+// Keep delivery history and statistics intact, including for legacy campaigns.
+export function deleteHardBouncedSubscribers(id: number, emails: string[]): number {
+  const connection = db();
+  return connection.transaction(() => {
+    const report = getSendReport(id);
+    if (!report) throw new Error("not_found");
+    const eligible = new Set(report.accepted.filter(r => r.hardBounce).map(r => r.recipient_email.toLowerCase()));
+    const unique = [...new Set(emails.map(email => email.trim().toLowerCase()))];
+    if (unique.some(email => !eligible.has(email))) throw new Error("not_hard_bounced");
+    let deleted = 0;
+    for (const email of unique) {
+      const ids = connection.prepare("SELECT id FROM subscribers WHERE email = ? COLLATE NOCASE").all(email) as {id: number}[];
+      deleted += deleteSubscribers(ids.map(r => r.id));
+    }
+    return deleted;
+  })();
 }
 export function claimSend(id: number): string | null {
   const connection = db();
